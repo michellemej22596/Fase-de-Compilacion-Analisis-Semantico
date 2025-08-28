@@ -63,6 +63,7 @@ RUN ./python-venv.sh
 
 COPY requirements.txt .
 # Not production-intended, never do this, this is just a simple example
+RUN pip install --upgrade pip
 RUN pip install -r requirements.txt --break-system-packages 
 
 # Set user

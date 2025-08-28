@@ -11,8 +11,9 @@ Este lenguaje se encuentra basado en Typescript, por lo que representa un subset
 
 1. **Construir y Ejecutar el Contenedor Docker:** Desde el directorio raíz, ejecuta el siguiente comando para construir la imagen y lanzar un contenedor interactivo:
 
+Cambio PWD para Windows
    ```bash
-   docker build --rm . -t csp-image && docker run --rm -ti -v "$(pwd)/program":/program csp-image
+   docker build --rm . -t csp-image && docker run --rm -ti -v "${PWD}/program:/program" csp-image
    ```
 2. **Entender el Entorno**
 
