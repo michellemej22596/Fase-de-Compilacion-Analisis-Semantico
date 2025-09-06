@@ -1,2 +1,21 @@
-configs
-program/__pycache__
+# Carpetas locales de configuración y cache
+configs/
+program/__pycache__/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Docker
+*.log
+.dockerignore
+
+# IDEs / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
