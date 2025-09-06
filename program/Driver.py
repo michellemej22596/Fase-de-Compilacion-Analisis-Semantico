@@ -3,6 +3,9 @@ from antlr4 import *
 from CompiscriptLexer import CompiscriptLexer
 from CompiscriptParser import CompiscriptParser
 from antlr4.error.ErrorListener import ErrorListener
+from semantic.sema_visitor import SemaVisitor
+from semantic.errors import SemanticError
+
 
 
 class CollectingErrorListener(ErrorListener):
@@ -57,6 +60,18 @@ def main(argv):
     else:
         print("✔ Sintaxis OK")
         sys.exit(0)
+
+    if err.has_errors():
+        print(err.report()); sys.exit(2)
+    else:
+        try:
+            sema = SemaVisitor()
+            sema.visit(tree)
+            print("✔ Semántica OK")
+            sys.exit(0)
+        except SemanticError as e:
+            print(f"Semántico: {e}")
+            sys.exit(3)
 
 
 if __name__ == '__main__':
