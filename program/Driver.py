@@ -7,7 +7,6 @@ from semantic.sema_visitor import SemaVisitor
 from semantic.errors import SemanticError
 
 
-
 class CollectingErrorListener(ErrorListener):
     def __init__(self):
         super().__init__()
@@ -37,41 +36,34 @@ def main(argv):
         print("Uso: python Driver.py <archivo.cps>")
         sys.exit(1)
 
-    # Lee el archivo de entrada (UTF-8 por defecto)
     input_stream = FileStream(argv[1], encoding="utf-8")
 
-    # Lexer y tokens
     lexer = CompiscriptLexer(input_stream)
-    stream = CommonTokenStream(lexer)
+    tokens = CommonTokenStream(lexer)
 
-    # Parser + listener de errores
-    parser = CompiscriptParser(stream)
+    parser = CompiscriptParser(tokens)
     parser.removeErrorListeners()
     err = CollectingErrorListener()
     parser.addErrorListener(err)
 
-    # Regla inicial (ajústala si tu grammar usa otro nombre)
-    tree = parser.program()  # regla de inicio
+    tree = parser.program()
 
-    # Reporte sintáctico
+    # --- Sintaxis ---
     if err.has_errors():
         print(err.report())
-        sys.exit(2)  # fallo sintáctico
+        sys.exit(2)
     else:
         print("✔ Sintaxis OK")
-        sys.exit(0)
 
-    if err.has_errors():
-        print(err.report()); sys.exit(2)
-    else:
-        try:
-            sema = SemaVisitor()
-            sema.visit(tree)
-            print("✔ Semántica OK")
-            sys.exit(0)
-        except SemanticError as e:
-            print(f"Semántico: {e}")
-            sys.exit(3)
+    # --- Semántica ---
+    try:
+        sema = SemaVisitor()
+        sema.visit(tree)
+        print("✔ Semántica OK")
+        sys.exit(0)
+    except SemanticError as e:
+        print(f"Semántico: {e}")
+        sys.exit(3)
 
 
 if __name__ == '__main__':
