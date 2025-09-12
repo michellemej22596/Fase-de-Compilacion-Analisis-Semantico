@@ -239,7 +239,7 @@ with st.sidebar:
     if uploaded is not None:
         buf = _decode(uploaded.getvalue())
         st.session_state.code = buf
-        st.session_state.console += f"📄 Cargado: {uploaded.name}\n"
+        st.session_state.console += f"📂 Archivo importado → {uploaded.name}\n"
         st.session_state.ace_key += 1
         st.session_state["_force_compile"] = True
         st.session_state["uploaded_name"] = uploaded.name
@@ -253,7 +253,7 @@ with st.sidebar:
     if choice != "(ninguno)":
         if st.session_state.get("_example_name") != choice:
             st.session_state.code = samples[choice]
-            st.session_state.console += f"📦 Ejemplo cargado: {choice}\n"
+            st.session_state.console += f"🧰 Ejemplo abierto → {choice}\n"
             st.session_state.ace_key += 1
             st.session_state["_force_compile"] = True
             st.session_state["_example_name"] = choice
@@ -309,25 +309,25 @@ if run_now or (auto_compile and st.session_state.code.strip()):
         st.session_state.last_result = res
         st.session_state.semantic = None
         if res.ok():
-            st.session_state.console += "✅ Análisis sintáctico OK.\n"
+            st.session_state.console += "✔️ Sintaxis: sin problemas.\n"
             if analyze is None:
-                st.session_state.console += "⚠️ El módulo semantic.checker no está disponible.\n"
+                st.session_state.console += "⚠️ Analizador semántico no disponible (semantic.checker).\n"
             else:
                 try:
                     sem = analyze(res.tree)
                     st.session_state.semantic = sem
                     errs = sem.get("errors", []) if isinstance(sem, dict) else []
                     if errs:
-                        st.session_state.console += f"⚠️ Errores semánticos: {len(errs)}\n"
+                        st.session_state.console += f"❗ Semántica: {len(errs)} problema(s) detectado(s).\n"
                     else:
-                        st.session_state.console += "✅ Análisis semántico sin errores.\n"
+                        st.session_state.console += "✔️ Semántica: OK.\n"
                 except Exception as ex:  # pragma: no cover
-                    st.session_state.console += f"💥 Excepción en semántica: {ex}\n"
+                    st.session_state.console += f"💣 Falló semántica: {ex}\n"
         else:
-            st.session_state.console += f"❌ Errores de sintaxis: {len(res.errors)}\n"
+            st.session_state.console += f"⛔ Sintaxis: {len(res.errors)} error(es).\n"
     except Exception as ex:  # pragma: no cover
         st.session_state.last_result = None
-        st.session_state.console += f"💥 Excepción: {ex}\n"
+        st.session_state.console += f"💣 Error no controlado: {ex}\n"
 
 # ------------------ Consola ------------------
 st.markdown("## 🖥️ Salida")
