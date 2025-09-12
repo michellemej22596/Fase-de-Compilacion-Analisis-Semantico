@@ -1,7 +1,8 @@
-#!/bin/sh
-: "3.12.3:=python"
-mkdir "/v3.12.3"
-python3 -m venv "/v3.12.3"
-source "/v3.12.3/bin/activate"
+#!/bin/bash
+set -e
 
-exec "$@"
+VENV_PATH="/opt/venv"
+python3 -m venv "$VENV_PATH"
+source "$VENV_PATH/bin/activate"
+
+echo "Virtual environment created and activated at $VENV_PATH"
