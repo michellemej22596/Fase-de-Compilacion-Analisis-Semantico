@@ -86,3 +86,23 @@ def parse_from_stream(stream: InputStream):
     _, parser, tokens, _ = _configure(stream)
     tree = getattr(parser, "program")()
     return (tree, tokens, parser)
+
+def parse_from_string(
+    code: str,
+    *,
+    entry_rule: str = "program",
+    raise_on_error: bool = False,
+) -> ParsingResult:
+    input_stream = InputStream(code)
+    _, parser, tokens, error_listener = _initialize_parser(input_stream)
+
+    if not hasattr(parser, entry_rule):
+        raise AttributeError(f"La regla de entrada '{entry_rule}' no existe en CompiscriptParser.")
+    parse_function = getattr(parser, entry_rule)
+    tree = parse_function()  # type: ignore[misc]
+
+    errors = error_listener.errors
+    if raise_on_error and errors:
+        raise SyntaxError("\n".join(str(error) for error in errors))
+
+    return ParseResult(tree=tree, parser=parser, tokens=tokens, errors=errors)
