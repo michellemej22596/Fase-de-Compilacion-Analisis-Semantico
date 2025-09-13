@@ -3,6 +3,14 @@ cd U
 cd Compis
 cd Fase-de-Compilacion-Analisis-Semantico
 
+streamlit run src/ide/app.py
+
+cd src
+
+python -m cli C:\Users\usuario\Desktop\U\Compis\Fase-de-Compilacion-Analisis-Semantico\src\tests\error_01_variable_no_declarada.cps
+
+python -m cli C:\Users\usuario\Desktop\U\Compis\Fase-de-Compilacion-Analisis-Semantico\src\tests\ambito_01_resolucion_local_global.cps
+
 
 
 python -m venv venv
