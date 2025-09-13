@@ -1,4 +1,3 @@
-# app.py 
 from __future__ import annotations
 import contextlib
 import json
@@ -10,37 +9,33 @@ from typing import Any
 import streamlit as st
 from streamlit.components.v1 import html
 
-# --- Rutas/paths base ---
-# Estructura esperada:
-# repo_root/
-#   ├─ src/
-#   │   ├─ ide/app.py (este archivo)
-#   │   └─ ... paquetes (parsing, semantic, etc.)
-#   ├─ program/
-#   └─ src/tests/
-
-SRC_DIR = Path(__file__).resolve().parents[1]  # .../repo/src
+# Definimos las rutas base del proyecto
+SRC_DIR = Path(__file__).resolve().parents[1]  # Obtiene el directorio padre, es decir, .../repo/src
 REPO_ROOT = SRC_DIR.parent                     # .../repo
 
-# Garantiza que los paquetes bajo src/ sean importables sin depender de PYTHONPATH externo
+# Aseguramos que los paquetes bajo src/ sean importables sin depender de PYTHONPATH externo
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-# Dependencias internas del compilador
+# Importación de dependencias internas del compilador
 from parsing.antlr import build_from_text, ParseResult  # type: ignore
 with contextlib.suppress(Exception):
     from parsing.antlr.CompiscriptLexer import CompiscriptLexer  # type: ignore
 
+# Intentamos importar Streamlit ACE para el editor de código, si no está disponible, se marca como False.
 try:
     from streamlit_ace import st_ace
     HAS_ACE = True
 except Exception:
     HAS_ACE = False
 
+# Intentamos importar la función de análisis semántico
 try:
     from semantic.checker import analyze  # type: ignore
 except Exception as _ex:  # Mensaje diferido a la UI si hace falta
     analyze = None  # type: ignore
+
+# Definición del estilo CSS para la app de Streamlit.
 _DEF_CSS = _NEW_CSS = """
 <style>
   :root{
@@ -207,7 +202,7 @@ _DEF_CSS = _NEW_CSS = """
 </style>
 """
 
-
+# Función que pinta el encabezado de la aplicación en Streamlit
 def paint_header() -> None:
     st.markdown(
         """
@@ -219,16 +214,14 @@ def paint_header() -> None:
           </div>
         </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True,  # Permitimos HTML no seguro para insertar el encabezado
     )
-
-
 
 # ------------------ Utilidades núcleo ------------------
 @st.cache_data(show_spinner=False)
 def discover_samples() -> dict[str, str]:
     """Escanea los directorios de ejemplo y devuelve {ruta_visible: contenido}."""
-    buckets = [REPO_ROOT / "program", REPO_ROOT / "src/tests"]
+    buckets = [REPO_ROOT / "program", REPO_ROOT / "src/tests"]  # Definimos los directorios de donde leer los ejemplos
     out: dict[str, str] = {}
     for root in buckets:
         if not root.exists():
@@ -238,10 +231,11 @@ def discover_samples() -> dict[str, str]:
                 continue
             if p.suffix.lower() in {".cps", ".cspt", ".txt", ".code"}:
                 with contextlib.suppress(Exception):
-                    out[f"{root.name}/{p.name}"] = p.read_text(encoding="utf-8")
+                    out[f"{root.name}/{p.name}"] = p.read_text(encoding="utf-8")  # Añadimos el contenido de los archivos
     return out
 
 
+# Función que normaliza la tabla de símbolos para mostrarla en una tabla comprensible.
 def normalize_symbol_table(payload: Any) -> list[dict[str, str]]:
     """Aplana la tabla de símbolos devuelta por el checker a filas tabulares."""
     scopes = payload if isinstance(payload, list) else [payload]
@@ -260,6 +254,7 @@ def normalize_symbol_table(payload: Any) -> list[dict[str, str]]:
     return rows
 
 
+# Función que convierte el árbol ANTLR a un formato DOT para usarlo en Graphviz y visualizarlo en Streamlit
 def to_dot_graph(tree, parser) -> str:
     """Convierte el árbol ANTLR a DOT para visualizar con Graphviz en Streamlit."""
     from antlr4 import RuleContext
@@ -306,6 +301,7 @@ def to_dot_graph(tree, parser) -> str:
     return "\n".join(lines)
 
 
+# Función que extrae la información de los tokens desde el resultado de análisis sintáctico.
 def token_table(parse_result: ParseResult) -> list[dict[str, int | str]]:
     ts = parse_result.tokens
     ts.fill()
@@ -347,10 +343,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown(_DEF_CSS, unsafe_allow_html=True)
-paint_header()
+st.markdown(_DEF_CSS, unsafe_allow_html=True)  # Se aplica el CSS para darle estilo a la app.
+paint_header()  # Pinta el encabezado en la app.
 
-# Inicializa session_state de forma compacta
+# Inicializa session_state con valores predeterminados para evitar errores de acceso a atributos no inicializados.
 st.session_state.setdefault("code", DEFAULT_SNIPPET)
 st.session_state.setdefault("console", "")
 st.session_state.setdefault("ace_key", 0)
