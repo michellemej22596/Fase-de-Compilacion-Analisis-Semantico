@@ -6,28 +6,30 @@ from antlr4 import ParserRuleContext, Token
 from parsing.antlr.CompiscriptVisitor import CompiscriptVisitor
 from parsing.antlr.CompiscriptParser import CompiscriptParser
 
-from .types import is_numeric, is_boolean, are_compatible, get_array_element_type, create_array_type
+from .types import INT, BOOL, STR, NULL, VOID, FLOAT, ArrayType, ClassType, Type
 from .symbols import VariableSymbol, FunctionSymbol, ClassSymbol, ParamSymbol, Symbol
 from .symbol_table import SymbolTable
 from .diagnostics import Diagnostics
-
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
 
 def where(ctx: ParserRuleContext) -> tuple[int, int]:
     t: Optional[Token] = getattr(ctx, "start", None)
     return ((t.line or 0), (t.column or 0)) if t else (0, 0)
 
-TERMINATED = object()  # marca de corte para dead-code en bloques
-
-# ---------------------------------------------------------------------
-# Visitor semántico
-# ---------------------------------------------------------------------
+# Marker para statements que terminan el flujo (return/break/continue)
+TERMINATED = object() 
 
 class CompiscriptSemanticVisitor(CompiscriptVisitor):
     """
-    Visitor semántico para Compiscript.g4 con sistema de tipos simplificado usando strings.
+    Visitor semántico para Compiscript.g4 con:
+    1) Encadenamiento: call/index/prop
+    2) Clases & herencia: this/new, lookup en parent
+    3) Comparaciones: validación de tipos
+    4) foreach: exige Array<T> y define item : T
+    5) Dead code: reporta tras return/break/continue
+    6) switch: casos compatibles con el tipo del switch(expr)
+    7) const: prohibir reasignación
+    8) for: visita init e increment
+    9) inferencia imposible en let x; (sin tipo ni init)
     """
 
     def __init__(self):
@@ -38,13 +40,12 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         self._current_class: Optional[ClassSymbol] = None
         self.classes: Dict[str, ClassSymbol] = {}  # nombre -> ClassSymbol
 
-    # -------------------- utilidades --------------------
 
     def error(self, code: str, msg: str, ctx: ParserRuleContext, **extra):
         line, col = where(ctx)
         self.diag.add(phase="semantic", code=code, message=msg, line=line, col=col, **extra)
 
-    def define_var(self, name: str, typ: str, ctx: ParserRuleContext, *, is_const: bool = False):
+    def define_var(self, name: str, typ: Type, ctx: ParserRuleContext, *, is_const: bool = False):
         try:
             v = VariableSymbol(name=name, type=typ)
             if hasattr(v, "is_const"):
@@ -91,8 +92,8 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             for p in ctx.parameters().parameter():
                 pname = p.Identifier().getText()
                 ptype = self._read_type(p.type_()) if p.type_() else None
-                params.append(ParamSymbol(name=pname, type=ptype or "integer"))
-        ret = self._read_type(ctx.type_()) if ctx.type_() else "void"
+                params.append(ParamSymbol(name=pname, type=ptype or INT))
+        ret = self._read_type(ctx.type_()) if ctx.type_() else VOID
         self.define_func(FunctionSymbol(name=name, type=ret, params=params), ctx)
 
     def _collect_class_signature(self, ctx: CompiscriptParser.ClassDeclarationContext):
@@ -102,7 +103,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
 
         cls = self.classes.get(name)
         if not cls:
-            cls = ClassSymbol(name=name, type=name)
+            cls = ClassSymbol(name=name, type=ClassType(name, {}))
             self.define_class(cls, ctx)
 
         # Herencia simple
@@ -123,8 +124,8 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
                     for p in f.parameters().parameter():
                         pname = p.Identifier().getText()
                         ptype = self._read_type(p.type_()) if p.type_() else None
-                        fparams.append(ParamSymbol(name=pname, type=ptype or "integer"))
-                fret = self._read_type(f.type_()) if f.type_() else "void"
+                        fparams.append(ParamSymbol(name=pname, type=ptype or INT))
+                fret = self._read_type(f.type_()) if f.type_() else VOID
                 fsym = FunctionSymbol(name=fname, type=fret, params=fparams)
                 cls.methods[fname] = fsym
             elif m.variableDeclaration():
@@ -132,14 +133,14 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
                 vname = v.Identifier().getText()
                 vtype = self._read_type(v.typeAnnotation().type_()) if v.typeAnnotation() else None
                 init_t = self.visit(v.initializer().expression()) if v.initializer() else None
-                typ = vtype or (init_t if isinstance(init_t, str) else "integer")
+                typ = vtype or (init_t if isinstance(init_t, Type) else INT)
                 cls.fields[vname] = VariableSymbol(name=vname, type=typ)
             elif m.constantDeclaration():
                 c = m.constantDeclaration()
                 cname = c.Identifier().getText()
                 ctype = self._read_type(c.typeAnnotation().type_()) if c.typeAnnotation() else None
                 init_t = self.visit(c.expression())
-                typ = ctype or (init_t if isinstance(init_t, str) else "integer")
+                typ = ctype or (init_t if isinstance(init_t, Type) else INT)
                 vs = VariableSymbol(name=cname, type=typ)
                 if hasattr(vs, "is_const"):
                     vs.is_const = True
@@ -154,12 +155,12 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
 
         if annotated is None and init_t is None:
             self.error("E104", f"No se puede inferir tipo de '{name}' sin inicializador", ctx)
-            self.define_var(name, "integer", ctx)  # fallback para no cascada
+            self.define_var(name, INT, ctx)  # fallback para no cascada
             return None
 
-        vtype = annotated or (init_t if isinstance(init_t, str) else "integer")
+        vtype = annotated or (init_t if isinstance(init_t, Type) else INT)
         self.define_var(name, vtype, ctx)
-        if init_t is not None and annotated is not None and not are_compatible(annotated, init_t):
+        if init_t is not None and annotated is not None and init_t != annotated:
             self.error("E101", f"Asignación incompatible: {annotated} = {init_t}", ctx)
         return None
 
@@ -167,9 +168,9 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         name = ctx.Identifier().getText()
         annotated = self._read_type(ctx.typeAnnotation().type_()) if ctx.typeAnnotation() else None
         init_t = self.visit(ctx.expression())
-        vtype = annotated or (init_t if isinstance(init_t, str) else "integer")
+        vtype = annotated or (init_t if isinstance(init_t, Type) else INT)
         self.define_var(name, vtype, ctx, is_const=True)
-        if annotated is not None and not are_compatible(annotated, init_t):
+        if annotated is not None and init_t != annotated:
             self.error("E101", f"Asignación incompatible: const {annotated} = {init_t}", ctx)
         return None
 
@@ -190,7 +191,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             if isinstance(sym, VariableSymbol) and getattr(sym, "is_const", False):
                 self.error("E202", f"No se puede reasignar const '{name}'", ctx)
                 return None
-            if sym and et and isinstance(sym, Symbol) and not are_compatible(sym.type, et):
+            if sym and et and isinstance(sym, Symbol) and sym.type != et:
                 self.error("E101", f"Asignación incompatible: {sym.type} = {et}", ctx)
             return None
 
@@ -199,12 +200,12 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             obj_t = self.visit(exprs[0])
             prop_name = ctx.Identifier().getText()
             val_t = self.visit(exprs[1])
-            if isinstance(obj_t, str) and obj_t.startswith("class:"):
+            if isinstance(obj_t, ClassType):
                 field_type = self._lookup_field_type(obj_t, prop_name)
                 if field_type is None:
                     self.error("E301", f"Miembro '{prop_name}' no existe en {obj_t}", ctx)
                 else:
-                    if not are_compatible(field_type, val_t):
+                    if field_type != val_t:
                         self.error("E101", f"Asignación incompatible a miembro '{prop_name}': {field_type} = {val_t}", ctx)
             else:
                 self.error("E301", "Asignación de propiedad sobre tipo no-clase", ctx)
@@ -230,7 +231,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
 
     def visitIfStatement(self, ctx: CompiscriptParser.IfStatementContext):
         ct = self.visit(ctx.expression())
-        if not is_boolean(ct):
+        if ct != BOOL:
             self.error("E101", f"La condición del if debe ser Bool, recibió {ct}", ctx)
         self.visit(ctx.block(0))
         if ctx.block(1):
@@ -239,7 +240,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
 
     def visitWhileStatement(self, ctx: CompiscriptParser.WhileStatementContext):
         ct = self.visit(ctx.expression())
-        if not is_boolean(ct):
+        if ct != BOOL:
             self.error("E101", f"La condición del while debe ser Bool, recibió {ct}", ctx)
         self._in_loop += 1
         self.visit(ctx.block())
@@ -251,7 +252,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         self.visit(ctx.block())
         self._in_loop -= 1
         ct = self.visit(ctx.expression())
-        if not is_boolean(ct):
+        if ct != BOOL:
             self.error("E101", f"La condición del do-while debe ser Bool, recibió {ct}", ctx)
         return None
 
@@ -264,7 +265,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         # condición
         if ctx.expression(0):
             ct = self.visit(ctx.expression(0))
-            if not is_boolean(ct):
+            if ct != BOOL:
                 self.error("E101", f"La condición del for debe ser Bool, recibió {ct}", ctx)
         # increment
         if ctx.expression(1):
@@ -276,10 +277,11 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
 
     def visitForeachStatement(self, ctx: CompiscriptParser.ForeachStatementContext):
         iter_t = self.visit(ctx.expression())
-        elem_t = get_array_element_type(iter_t)
-        if elem_t is None:
+        if not isinstance(iter_t, ArrayType):
             self.error("E301", f"foreach requiere Array, recibió {iter_t}", ctx)
-            elem_t = "null"
+            elem_t = NULL
+        else:
+            elem_t = iter_t.elem
         self.symtab.push("BLOCK")
         self.define_var(ctx.Identifier().getText(), elem_t, ctx)  # item : T
         self._in_loop += 1
@@ -305,9 +307,9 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         expr = ctx.expression()
         rt = None if expr is None else self.visit(expr)
         expected = self._current_function.type
-        if expected == "void" and rt is not None:
+        if expected == VOID and rt is not None:
             self.error("E103", f"La función no retorna valor, pero se retornó {rt}", ctx)
-        if expected != "void" and (rt is None or not are_compatible(expected, rt)):
+        if expected != VOID and (rt is None or rt != expected):
             self.error("E103", f"Tipo de retorno esperado {expected}, recibido {rt}", ctx)
         return TERMINATED
 
@@ -315,7 +317,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         st = self.visit(ctx.expression())
         for c in ctx.switchCase() or []:
             ct = self.visit(c.expression())
-            if st is not None and ct is not None and not are_compatible(st, ct):
+            if st is not None and ct is not None and st != ct:
                 self.error("E302", f"Tipo de 'case' incompatible: {ct} con switch {st}", c)
             terminated = False
             for s in c.statement() or []:
@@ -451,21 +453,19 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
 
 
     def _apply_index(self, parent_ctx, sop: CompiscriptParser.IndexExprContext,
-                     cur_type: Optional[str]) -> Tuple[Optional[str], Optional[Symbol]]:
+                     cur_type: Optional[Type]) -> Tuple[Optional[Type], Optional[Symbol]]:
         idxt = self.visit(sop.expression())
-        if idxt != "integer":
+        if idxt != INT:
             self.error("E401", "Índice de arreglo debe ser Int", sop)
-        
-        elem_t = get_array_element_type(cur_type)
-        if elem_t is not None:
-            return elem_t, None
+        if isinstance(cur_type, ArrayType):
+            return cur_type.elem, None
         self.error("E301", "Indexación sobre un tipo no indexable", sop)
         return None, None
 
     def _apply_member(self, parent_ctx, sop: CompiscriptParser.PropertyAccessExprContext,
-                      cur_type: Optional[str]) -> Tuple[Optional[str], Optional[Symbol]]:
+                      cur_type: Optional[Type]) -> Tuple[Optional[Type], Optional[Symbol]]:
         member = sop.Identifier().getText()
-        if isinstance(cur_type, str) and cur_type.startswith("class:"):
+        if isinstance(cur_type, ClassType):
             ft = self._lookup_field_type(cur_type, member)
             if ft is not None:
                 return ft, None
@@ -487,7 +487,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
 
     def visitThisExpr(self, ctx: CompiscriptParser.ThisExprContext):
         if self._current_class is not None:
-            return f"class:{self._current_class.name}"
+            return self._current_class.type
         self.error("E301", "Uso de 'this' fuera de clase", ctx)
         return None
 
@@ -495,7 +495,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         cname = ctx.Identifier().getText()
         sym = self.resolve(cname, ctx)
         if isinstance(sym, ClassSymbol):
-            return f"class:{sym.name}"
+            return sym.type
         return None
 
     # -------------------- literales / arrays --------------------
@@ -504,42 +504,42 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         if ctx.Literal():
             text = (ctx.Literal().getSymbol().text or "")
             if text.startswith('"'):
-                return "string"
+                return STR
             if '.' in text:     # si agregaste FloatLiteral, esto seguirá funcionando bien
-                return "float"
-            return "integer"
+                return FLOAT
+            return INT
         if ctx.arrayLiteral():
             return self.visit(ctx.arrayLiteral())
         txt = ctx.getText()
         if txt == "null":
-            return "null"
+            return NULL
         if txt == "true" or txt == "false":
-            return "boolean"
+            return BOOL
         return None
 
     def visitArrayLiteral(self, ctx: CompiscriptParser.ArrayLiteralContext):
         exprs = ctx.expression()
         elems = [self.visit(e) for e in (exprs or [])]
         if not elems:
-            return create_array_type("null")
+            return ArrayType(NULL)
         first = elems[0]
         for e in elems[1:]:
-            if not are_compatible(e, first):
+            if e != first:
                 self.error("E101", "Array con tipos heterogéneos", ctx)
-                return create_array_type(first)
-        return create_array_type(first)
+                return ArrayType(first)
+        return ArrayType(first)
 
     # -------------------- helpers numéricos --------------------
 
-    def _is_numeric(self, t: Optional[str]) -> bool:
-        return t in ("integer", "float")
+    def _is_numeric(self, t: Optional[Type]) -> bool:
+        return t in (INT, FLOAT)
 
-    def _num_result(self, a: Optional[str], b: Optional[str]) -> Optional[str]:
+    def _num_result(self, a: Optional[Type], b: Optional[Type]) -> Optional[Type]:
         # Int op Int -> Int; cualquier mezcla con Float -> Float; otros -> None
-        if a == "integer" and b == "integer":
-            return "integer"
-        if a in ("integer", "float") and b in ("integer", "float"):
-            return "float"
+        if a == INT and b == INT:
+            return INT
+        if a in (INT, FLOAT) and b in (INT, FLOAT):
+            return FLOAT
         return None
 
     # -------------------- unarios / binarios / lógicos / condicional --------------------
@@ -549,15 +549,15 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             op = ctx.getChild(0).getText()
             t = self.visit(ctx.unaryExpr())
             if op == '-':
-                if not is_numeric(t):
+                if not self._is_numeric(t):
                     self.error("E101", f"Negación requiere número, recibió {t}", ctx)
-                    return "integer"
+                    return INT
                 return t
             if op == '!':
-                if not is_boolean(t):
+                if t != BOOL:
                     self.error("E101", f"NOT requiere Bool, recibió {t}", ctx)
-                    return "boolean"
-                return "boolean"
+                    return BOOL
+                return BOOL
             return t
         return self.visit(ctx.primaryExpr())
 
@@ -567,14 +567,11 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         t = self.visit(ctx.multiplicativeExpr(0))
         for i in range(1, len(ctx.multiplicativeExpr())):
             rt = self.visit(ctx.multiplicativeExpr(i))
-            if is_numeric(t) and is_numeric(rt):
-                # Int op Int -> Int; cualquier mezcla con Float -> Float
-                if t == "integer" and rt == "integer":
-                    t = "integer"
-                else:
-                    t = "float"
-            elif t == "string" or rt == "string":
-                t = "string"  # concatenación con +
+            nr = self._num_result(t, rt)
+            if nr is not None:
+                t = nr
+            elif t == STR or rt == STR:
+                t = STR  # concatenación con +
             else:
                 self.error("E101", f"Operación aditiva incompatible: {t} y {rt}", ctx)
         return t
@@ -585,12 +582,9 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         t = self.visit(ctx.unaryExpr(0))
         for i in range(1, len(ctx.unaryExpr())):
             rt = self.visit(ctx.unaryExpr(i))
-            if is_numeric(t) and is_numeric(rt):
-                # Int op Int -> Int; cualquier mezcla con Float -> Float
-                if t == "integer" and rt == "integer":
-                    t = "integer"
-                else:
-                    t = "float"
+            nr = self._num_result(t, rt)
+            if nr is not None:
+                t = nr
             else:
                 self.error("E101", f"Operación multiplicativa incompatible: {t} y {rt}", ctx)
         return t
@@ -601,9 +595,10 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             return self.visit(ctx.relationalExpr(0))
         lt = self.visit(ctx.relationalExpr(0))
         rt = self.visit(ctx.relationalExpr(1))
-        if not are_compatible(lt, rt):
+        # números compatibles OK; si no, tipos exactamente iguales
+        if self._num_result(lt, rt) is None and lt != rt:
             self.error("E101", f"Comparación ==/!= entre tipos incompatibles: {lt} y {rt}", ctx)
-        return "boolean"
+        return BOOL
 
     def visitRelationalExpr(self, ctx: CompiscriptParser.RelationalExprContext):
         n = len(ctx.additiveExpr())
@@ -611,9 +606,9 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             return self.visit(ctx.additiveExpr(0))
         lt = self.visit(ctx.additiveExpr(0))
         rt = self.visit(ctx.additiveExpr(1))
-        if not (is_numeric(lt) and is_numeric(rt)):
+        if self._num_result(lt, rt) is None:
             self.error("E101", f"Comparación relacional requiere números, recibió {lt} y {rt}", ctx)
-        return "boolean"
+        return BOOL
 
     def visitLogicalAndExpr(self, ctx: CompiscriptParser.LogicalAndExprContext):
         n = len(ctx.equalityExpr())
@@ -621,9 +616,9 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             return self.visit(ctx.equalityExpr(0))
         for i in range(n):
             t = self.visit(ctx.equalityExpr(i))
-            if not is_boolean(t):
+            if t != BOOL:
                 self.error("E101", f"AND requiere Bool, recibió {t}", ctx)
-        return "boolean"
+        return BOOL
 
     def visitLogicalOrExpr(self, ctx: CompiscriptParser.LogicalOrExprContext):
         n = len(ctx.logicalAndExpr())
@@ -631,15 +626,15 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             return self.visit(ctx.logicalAndExpr(0))
         for i in range(n):
             t = self.visit(ctx.logicalAndExpr(i))
-            if not is_boolean(t):
+            if t != BOOL:
                 self.error("E101", f"OR requiere Bool, recibido {t}", ctx)
-        return "boolean"
+        return BOOL
 
     def visitTernaryExpr(self, ctx: CompiscriptParser.TernaryExprContext):
         if ctx.getChildCount() == 1:
             return self.visit(ctx.logicalOrExpr())
         ct = self.visit(ctx.logicalOrExpr())
-        if not is_boolean(ct):
+        if ct != BOOL:
             self.error("E101", f"Condición del operador ternario debe ser Bool, recibió {ct}", ctx)
         tt = self.visit(ctx.expression(0))
         _ = self.visit(ctx.expression(1))
@@ -647,46 +642,43 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
 
     # -------------------- tipos --------------------
 
-    def _read_type(self, tctx: Optional[CompiscriptParser.TypeContext]) -> Optional[str]:
+    def _read_type(self, tctx: Optional[CompiscriptParser.TypeContext]) -> Optional[Type]:
         if tctx is None:
             return None
         base = self._read_base_type(tctx.baseType())
         txt = tctx.getText()
         brackets = txt.count("[]")
-        typ: str = base or "null"
+        typ: Type = base or NULL
         for _ in range(brackets):
-            typ = create_array_type(typ)
+            typ = ArrayType(typ)
         return typ
 
-    def _read_base_type(self, bctx: Optional[CompiscriptParser.BaseTypeContext]) -> Optional[str]:
+    def _read_base_type(self, bctx: Optional[CompiscriptParser.BaseTypeContext]) -> Optional[Type]:
         if bctx is None:
             return None
         txt = bctx.getText()
         if txt == "integer":
-            return "integer"
+            return INT
         if txt == "float":
-            return "float"
+            return FLOAT
         if txt == "boolean":
-            return "boolean"
+            return BOOL
         if txt == "string":
-            return "string"
+            return STR
         if txt == "void":
-            return "void"
+            return VOID
         # Identificador de clase (nominal)
         sym = self.resolve(txt, bctx)
         if isinstance(sym, ClassSymbol):
-            return f"class:{sym.name}"
-        return f"class:{txt}"
+            return sym.type
+        return ClassType(txt, {})
 
     # -------------------- lookup de clases (fields/methods con herencia) --------------------
 
-    def _lookup_class_symbol(self, ct: str) -> Optional[ClassSymbol]:
-        if ct.startswith("class:"):
-            class_name = ct[6:]  # quitar "class:" prefix
-            return self.classes.get(class_name)
-        return None
+    def _lookup_class_symbol(self, ct: ClassType) -> Optional[ClassSymbol]:
+        return self.classes.get(ct.class_name)
 
-    def _lookup_field_type(self, ct: str, name: str) -> Optional[str]:
+    def _lookup_field_type(self, ct: ClassType, name: str) -> Optional[Type]:
         cs = self._lookup_class_symbol(ct)
         cur = cs
         while cur is not None:
@@ -695,7 +687,7 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
             cur = getattr(cur, "parent", None)
         return None
 
-    def _lookup_method_symbol(self, ct: str, name: str) -> Optional[FunctionSymbol]:
+    def _lookup_method_symbol(self, ct: ClassType, name: str) -> Optional[FunctionSymbol]:
         cs = self._lookup_class_symbol(ct)
         cur = cs
         while cur is not None:
@@ -703,7 +695,6 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
                 return cur.methods[name]
             cur = getattr(cur, "parent", None)
         return None
-
 
 # ---------------------------------------------------------------------
 # Facade

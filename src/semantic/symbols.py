@@ -1,11 +1,13 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
+from .types import Type
 
 @dataclass
 class Symbol:
     name: str
-    type: str  # Ahora usa string en lugar de Type
+    type: Type
+    # Evitamos problemas de orden en dataclasses
     kind: str = field(default="", init=False)
 
 @dataclass

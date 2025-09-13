@@ -1,68 +1,48 @@
-BOOL  = "boolean"
-INT   = "integer"
-STR   = "string"
-FLOAT = "float"
-NULL  = "null"
-VOID  = "void"
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Optional, Dict
 
-# Predicados para verificación de tipos
-def is_boolean(t):
-    return t == BOOL
+class Type:
+    name: str = "<type>"
 
-def is_integer(t):
-    return t == INT
+    def __eq__(self, other):
+        return isinstance(other, Type) and self.name == other.name
 
-def is_float(t):
-    return t == FLOAT
+    def __str__(self):
+        return self.name
 
-def is_numeric(t):
-    return t in (INT, FLOAT)
 
-def is_string(t):
-    return t == STR
+class IntType(Type):    name = "Int"
+class FloatType(Type):  name = "Float"   
+class BoolType(Type):   name = "Bool"
+class StringType(Type): name = "String"
+class NullType(Type):   name = "Null"
+class VoidType(Type):   name = "Void"
 
-def is_null(t):
-    return t == NULL
 
-def is_void(t):
-    return t == VOID
+@dataclass(frozen=True)
+class ArrayType(Type):
+    elem: Type
+    def __str__(self):
+        return f"[{self.elem}]"
+    @property
+    def name(self):
+        return f"Array<{self.elem}>"
 
-# Compatibilidad de tipos
-def are_compatible(expected, actual):
-    # Igualdad exacta
-    if expected == actual:
-        return True
+@dataclass
+class ClassType(Type):
+    class_name: str
+    members: Dict[str, Type]
+    def __str__(self):
+        return self.class_name
+    @property
+    def name(self):
+        return self.class_name
 
-    # Numéricos compatibles entre sí (promoción implícita int<->float)
-    if expected in (INT, FLOAT) and actual in (INT, FLOAT):
-        return True
-
-    # NULL compatible con cualquier tipo (opcional)
-    if actual == NULL:
-        return True
-
-    return False
-
-# Función para crear tipos de array (mantenemos funcionalidad existente)
-def array_type(elem_type):
-    return f"array<{elem_type}>"
-
-def is_array(t):
-    return isinstance(t, str) and t.startswith("array<")
-
-def get_array_element_type(array_type_str):
-    if is_array(array_type_str):
-        return array_type_str[6:-1]  # Extrae el tipo entre "array<" y ">"
-    return None
-
-# Función para crear tipos de clase
-def class_type(class_name):
-    return f"class<{class_name}>"
-
-def is_class(t):
-    return isinstance(t, str) and t.startswith("class<")
-
-def get_class_name(class_type_str):
-    if is_class(class_type_str):
-        return class_type_str[6:-1]  # Extrae el nombre entre "class<" y ">"
-    return None
+# Singleton instances
+INT    = IntType()
+FLOAT  = FloatType()   
+BOOL   = BoolType()
+STR    = StringType()
+NULL   = NullType()
+VOID   = VoidType()
