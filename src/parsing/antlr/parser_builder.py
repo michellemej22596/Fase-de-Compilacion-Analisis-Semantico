@@ -9,6 +9,8 @@ from .error_listener import CollectingErrorListener, SyntaxDiagnostic
 from .CompiscriptLexer import CompiscriptLexer
 from .CompiscriptParser import CompiscriptParser
 
+
+
 @dataclass
 class ParsingResult:
     """Contenedor para el árbol sintáctico, el parser, los tokens y los errores de sintaxis."""
@@ -87,3 +89,12 @@ def parse_from_input_stream(stream: InputStream):
     _, parser, tokens, _ = _initialize_parser(stream)
     tree = getattr(parser, "program")()
     return tree, tokens, parser
+
+def build_from_text(code: str, entry_rule: str = "program") -> ParsingResult:
+    """Convierte el código fuente en un árbol de sintaxis abstracta (AST) y devuelve los tokens, errores y el árbol."""
+
+    # Llama a la función parse_from_string, que parsea el código y obtiene el árbol
+    result = parse_from_string(code, entry_rule=entry_rule, raise_on_error=True)
+
+    # Si se requieren los tokens y el árbol como resultado
+    return result

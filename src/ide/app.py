@@ -27,7 +27,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 # Dependencias internas del compilador
-from parsing.antlr import build_from_text, ParseResult  # type: ignore
+from parsing.antlr import build_from_text, ParsingResult  # type: ignore
 with contextlib.suppress(Exception):
     from parsing.antlr.CompiscriptLexer import CompiscriptLexer  # type: ignore
 
