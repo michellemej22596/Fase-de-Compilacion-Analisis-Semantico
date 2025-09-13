@@ -43,31 +43,167 @@ except Exception as _ex:  # Mensaje diferido a la UI si hace falta
     analyze = None  # type: ignore
 
 # ------------------ Estilos y theming ------------------
-_DEF_CSS = """
+_DEF_CSS =  _NEW_CSS = """
 <style>
-  :root{
-    --bg: #0f1115;      /* fondo */
-    --layer: #151821;   /* paneles */
-    --ink: #d8dee9;     /* texto */
-    --ink-sub: #9aa4b2; /* texto tenue */
-    --brand: #5aa9e6;   /* acento */
-    --ok: #4ec9b0;
-    --warn: #d7ba7d;
-    --err: #f55353;
+  :root {
+    --bg: #ffffff;      /* Fondo blanco puro */
+    --layer: #f8f9fa;   /* Paneles suaves y claros */
+    --ink: #000000;     /* Texto negro para máxima legibilidad */
+    --ink-sub: #555555; /* Texto secundario gris oscuro */
+    --brand: #007bff;    /* Azul brillante para los botones */
+    --ok: #28a745;       /* Verde brillante para mensajes de éxito */
+    --warn: #ffc107;     /* Amarillo brillante para advertencias */
+    --err: #dc3545;      /* Rojo brillante para errores */
+    --header-bg: #343a40; /* Fondo gris oscuro para la cabecera */
+    --header-text: #ffffff; /* Texto blanco para contraste en cabecera */
+    --message-bg: #e9ecef; /* Fondo claro para los mensajes */
+    --message-text: #000000; /* Texto negro en los mensajes */
   }
-  .stApp{ background: var(--bg); color: var(--ink); }
-  [data-testid="stSidebar"]{ background: var(--layer) !important; border-right: 1px solid #0b0d12; }
-  .block-container{ padding-top: 1rem; }
-  h1,h2,h3,h4,h5,h6{ color: var(--ink) !important; }
-  .stButton>button{
-    background: var(--layer); color: var(--ink); border: 1px solid #0b0d12;
-    transition: transform .06s ease-in-out;
+
+  /* Fondo general y tipografía */
+  .stApp {
+    background: var(--bg);
+    color: var(--ink);   /* Color de texto negro */
+    font-family: 'Arial', sans-serif;
   }
-  .stButton>button:hover{ background: var(--brand); color: #fff; transform: translateY(-1px); }
-  [data-baseweb="tab-list"]{ background: var(--layer); padding: .25rem; gap: .25rem; }
-  [data-baseweb="tab"]{ background: #1c2030; color: var(--ink); border-radius: 6px; }
-  [aria-selected="true"][data-baseweb="tab"]{ background: var(--brand); color: #fff; }
-  .code-like{ background:#151821; border:1px solid #0b0d12; border-radius:6px; padding:.5rem .75rem; font-family:Consolas,Monaco,monospace; }
+
+  /* Cabecera mejorada */
+  .stApp > header {
+    background: var(--header-bg);
+    color: var(--header-text);
+    padding: 20px 30px;
+    font-size: 1.5rem;
+    border-radius: 10px 10px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .stApp > header .header-logo {
+    font-size: 2rem;
+  }
+
+  .stApp > header h1 {
+    color: var(--header-text);
+    font-weight: 700;
+  }
+
+  .stApp > header .header-text {
+    color: var(--ink-sub);
+    font-size: 1rem;
+  }
+
+  /* Títulos de secciones (como "EDITOR", "RESULTADOS", etc.) */
+  .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6 {
+    color: var(--ink);   /* Texto negro para los títulos */
+  }
+
+  /* Asegurarse de que los mensajes de Streamlit sean legibles */
+  .stInfo, .stWarning, .stSuccess, .stError {
+    color: var(--ink) !important; /* Asegura que el texto en estos mensajes sea negro */
+    background-color: var(--message-bg);  /* Fondo claro para los mensajes */
+    border: 1px solid #dcdcdc; /* Asegura que los bordes no sean demasiado visibles */
+  }
+
+  /* Mensajes específicos como "Ejecuta el análisis..." */
+  .stMarkdown p, .stAlert, .stInfo, .stSuccess, .stError, .stWarning {
+    background-color: var(--message-bg);  /* Fondo claro para los mensajes */
+    color: var(--message-text) !important;   /* Texto negro en los mensajes */
+  }
+
+  /* Botones */
+  .stButton > button {
+    background: var(--layer);
+    color: var(--ink);   /* Texto negro en los botones */
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+    padding: 0.8rem 1.5rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.3s ease, transform 0.2s ease;
+  }
+
+  .stButton > button:hover {
+    background: var(--brand);
+    color: #ffffff;
+    transform: translateY(-2px);
+  }
+
+  /* Pestañas */
+  [data-baseweb="tab-list"] {
+    background: var(--layer);
+    padding: 0.5rem;
+    gap: 0.5rem;
+    border-radius: 8px;
+  }
+
+  [data-baseweb="tab"] {
+    background: #ffffff;
+    color: var(--ink);   /* Texto negro en las pestañas */
+    border-radius: 6px;
+    padding: 1rem 1.5rem;
+    transition: background 0.3s ease;
+  }
+
+  [aria-selected="true"][data-baseweb="tab"] {
+    background: var(--brand);
+    color: #ffffff;
+  }
+
+  /* Bloques de código */
+  .code-like {
+    background: #f8f9fa;
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: 'Courier New', monospace;
+    font-size: 1rem;
+    color: var(--ink);   /* Texto negro en los bloques de código */
+  }
+
+  /* Entradas de texto */
+  .stTextInput input, .stTextArea textarea {
+    background-color: #ffffff;
+    color: var(--ink);   /* Texto negro en entradas de texto */
+    border-radius: 6px;
+    border: 1px solid #dcdcdc;
+    padding: 0.6rem;
+    font-size: 1rem;
+  }
+
+  /* Color de las alertas y mensajes */
+  .stAlert {
+    background-color: #ffe7e7;
+    color: var(--ink);   /* Texto negro en las alertas */
+    border-left: 5px solid var(--err);
+  }
+
+  /* Estilo para el editor de código (en caso de no usar ace) */
+  .stTextArea, .stTextInput {
+    background-color: #ffffff;
+    border-radius: 6px;
+    border: 1px solid #dcdcdc;
+  }
+
+  /* Cuadro de guardar */
+  .stDownloadButton {
+    background-color: #f4f4f4;
+    color: var(--ink);   /* Texto negro en el botón de guardar */
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+    padding: 0.8rem 1.5rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.3s ease, transform 0.2s ease;
+  }
+
+  .stDownloadButton:hover {
+    background: var(--brand);
+    color: #ffffff;
+    transform: translateY(-2px);
+  }
+  
 </style>
 """
 
@@ -75,11 +211,11 @@ _DEF_CSS = """
 def paint_header() -> None:
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;gap:.75rem;background:#0c0e13;border-bottom:1px solid #0b0d12;padding:.6rem 1rem;">
-          <div style="font-size:1.25rem">🧪</div>
+        <div style="display:flex;align-items:center;gap:.75rem;background:#ffffff;border-bottom:1px solid #dcdcdc;padding:.6rem 1rem;">
+          <div style="font-size:1.25rem;color:#000000;">🧪</div>
           <div>
-            <div style="color:#5aa9e6;font-weight:600;letter-spacing:.3px">Compiscript IDE</div>
-            <div style="color:#9aa4b2;font-size:.85rem">Refactor limpio • v1.0.0</div>
+            <div style="color:#000000;font-weight:600;letter-spacing:.3px">Compiscript IDE</div>
+            <div style="color:#333333;font-size:.85rem">Refactor limpio • v1.0.0</div>
           </div>
         </div>
         """,
