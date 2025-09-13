@@ -41,186 +41,187 @@ try:
     from semantic.checker import analyze  # type: ignore
 except Exception as _ex:  # Mensaje diferido a la UI si hace falta
     analyze = None  # type: ignore
-
-# ------------------ Estilos y theming ------------------
-_DEF_CSS =  _NEW_CSS = """
+_DEF_CSS = _NEW_CSS = """
 <style>
-  :root {
-    --bg: #ffffff;      /* Fondo blanco puro */
-    --layer: #f8f9fa;   /* Paneles suaves y claros */
-    --ink: #000000;     /* Texto negro para máxima legibilidad */
-    --ink-sub: #555555; /* Texto secundario gris oscuro */
-    --brand: #007bff;    /* Azul brillante para los botones */
-    --ok: #28a745;       /* Verde brillante para mensajes de éxito */
-    --warn: #ffc107;     /* Amarillo brillante para advertencias */
-    --err: #dc3545;      /* Rojo brillante para errores */
-    --header-bg: #343a40; /* Fondo gris oscuro para la cabecera */
-    --header-text: #ffffff; /* Texto blanco para contraste en cabecera */
-    --message-bg: #e9ecef; /* Fondo claro para los mensajes */
-    --message-text: #000000; /* Texto negro en los mensajes */
+  :root{
+    --bg:#ffffff;              /* Fondo principal (blanco) */
+    --layer:#f0f6ff;           /* Paneles/tiles (azul muy claro) */
+    --ink:#0b1f44;             /* Texto principal (azul marino) */
+    --ink-sub:#3b5b8a;         /* Texto secundario */
+    --brand:#1e66ff;           /* Azul de marca / primario */
+    --brand-600:#1553d6;       /* Hover/active */
+    --ok:#2e7d32;
+    --warn:#ffca3a;
+    --err:#e63946;
+    --header-bg:#e8f0ff;       /* Cabecera clara */
+    --header-text:#0b1f44;
+    --message-bg:#edf2ff;      /* Tarjetas / alerts */
+    --border:#c7dbff;          /* Bordes suaves azules */
   }
 
-  /* Fondo general y tipografía */
-  .stApp {
-    background: var(--bg);
-    color: var(--ink);   /* Color de texto negro */
-    font-family: 'Arial', sans-serif;
+  /* App */
+  .stApp{
+    background:var(--bg);
+    color:var(--ink);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   }
 
-  /* Cabecera mejorada */
-  .stApp > header {
-    background: var(--header-bg);
-    color: var(--header-text);
-    padding: 20px 30px;
-    font-size: 1.5rem;
-    border-radius: 10px 10px 0 0;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  /* Sidebar (antes gris) */
+  [data-testid="stSidebar"]{
+    background:var(--layer) !important;
+    border-right:1px solid var(--border);
   }
 
-  .stApp > header .header-logo {
-    font-size: 2rem;
+  /* Cabecera superior */
+  .stApp > header{
+    background:var(--header-bg) !important;
+    color:var(--header-text) !important;
+    padding:20px 30px;
+    border-bottom:1px solid var(--border);
+    border-radius:10px 10px 0 0;
+    box-shadow:none;
+  }
+  .stApp > header .header-logo{ color:var(--brand); }
+  .stApp > header h1,
+  .stApp > header .header-text{ color:var(--header-text) !important; }
+
+  /* Títulos y texto */
+  .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
+  .stMarkdown h4, .stMarkdown h5, .stMarkdown h6{
+    color:var(--ink);
+  }
+  .stMarkdown p, .stCaption, .st-emotion-cache-10trblm{
+    color:var(--ink);
+  }
+  a{ color:var(--brand); }
+
+  /* Contenedores / cards */
+  .stAlert, .stInfo, .stWarning, .stSuccess, .stError{
+    background:var(--message-bg) !important;
+    color:var(--ink) !important;
+    border:1px solid var(--border) !important;
+  }
+  .stAlert{ border-left:5px solid var(--err) !important; }
+
+  /* Tabs */
+  [data-baseweb="tab-list"]{
+    background:var(--layer);
+    padding:.5rem; gap:.5rem; border-radius:10px; border:1px solid var(--border);
+  }
+  [data-baseweb="tab"]{
+    background:#ffffff; color:var(--ink);
+    border-radius:8px; padding:0.75rem 1.1rem; border:1px solid var(--border);
+  }
+  [aria-selected="true"][data-baseweb="tab"]{
+    background:var(--brand); color:#fff; border-color:var(--brand);
   }
 
-  .stApp > header h1 {
-    color: var(--header-text);
-    font-weight: 700;
+  /* Inputs */
+  .stTextInput input, .stTextArea textarea{
+    background:#fff; color:var(--ink);
+    border:1px solid var(--border); border-radius:8px; padding:.6rem;
   }
 
-  .stApp > header .header-text {
-    color: var(--ink-sub);
-    font-size: 1rem;
+  /* Botones (incluye Guardar/Download) */
+  .stButton > button,
+  .stDownloadButton > button,
+  .st-emotion-cache-7ym5gk button,              /* fallback */
+  [data-testid="baseButton-secondary"]{
+    background:#ffffff; color:var(--ink);
+    border:1px solid var(--border); border-radius:10px;
+    padding:.7rem 1.2rem; transition:background .2s, transform .15s;
+  }
+  .stButton > button:hover,
+  .stDownloadButton > button:hover,
+  [data-testid="baseButton-secondary"]:hover{
+    background:var(--brand); color:#fff; transform:translateY(-1px);
+    border-color:var(--brand);
   }
 
-  /* Títulos de secciones (como "EDITOR", "RESULTADOS", etc.) */
-  .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6 {
-    color: var(--ink);   /* Texto negro para los títulos */
+  /* Code blocks */
+  .code-like, .stCode, pre, code{
+    background:#f7faff !important;
+    border:1px solid var(--border) !important;
+    color:var(--ink) !important; border-radius:10px; padding:1rem;
   }
 
-  /* Asegurarse de que los mensajes de Streamlit sean legibles */
-  .stInfo, .stWarning, .stSuccess, .stError {
-    color: var(--ink) !important; /* Asegura que el texto en estos mensajes sea negro */
-    background-color: var(--message-bg);  /* Fondo claro para los mensajes */
-    border: 1px solid #dcdcdc; /* Asegura que los bordes no sean demasiado visibles */
+  /* Editor Ace (cuando no uses tema oscuro) */
+  .ace_editor{
+    background:#ffffff !important;
+    color:var(--ink) !important;
+    border:1px solid var(--border); border-radius:10px;
+  }
+  .ace_gutter{ background:#eaf2ff !important; color:#405b9a !important; }
+  .ace_marker-layer .ace_active-line{ background:#dfe8ff !important; }
+  .ace_cursor{ color:var(--brand) !important; }
+
+  /* Tablas/Dataframe */
+  .stDataFrame, .st-emotion-cache-1s3b6h1{
+    background:#fff; border:1px solid var(--border); border-radius:10px;
   }
 
-  /* Mensajes específicos como "Ejecuta el análisis..." */
-  .stMarkdown p, .stAlert, .stInfo, .stSuccess, .stError, .stWarning {
-    background-color: var(--message-bg);  /* Fondo claro para los mensajes */
-    color: var(--message-text) !important;   /* Texto negro en los mensajes */
+  /* Paneles/expander */
+  .st-expander{
+    background:#fff; border:1px solid var(--border); border-radius:12px !important;
   }
 
-  /* Botones */
-  .stButton > button {
-    background: var(--layer);
-    color: var(--ink);   /* Texto negro en los botones */
-    border: 1px solid #dcdcdc;
-    border-radius: 8px;
-    padding: 0.8rem 1.5rem;
-    font-size: 1.1rem;
-    cursor: pointer;
-    transition: background 0.3s ease, transform 0.2s ease;
+  /* Encabezado compacto del título personalizado */
+  .cs-header{
+    display:flex;align-items:center;gap:.75rem;background:#ffffff;
+    border-bottom:1px solid var(--border);padding:.6rem 1rem;
   }
+  .cs-title{ color:var(--ink); font-weight:700; letter-spacing:.3px; }
+  .cs-sub{ color:var(--ink-sub); font-size:.85rem; }
 
-  .stButton > button:hover {
-    background: var(--brand);
-    color: #ffffff;
-    transform: translateY(-2px);
-  }
+  /* Uploader y selector de ejemplos */
+.stFileUploader,
+.stSelectbox,
+.stFileUploader input {
+    background-color: #f0f6ff;  /* Fondo claro azul */
+    color: #0b1f44;  /* Texto oscuro */
+    border: 1px solid #c7dbff;  /* Borde suave azul */
+}
 
-  /* Pestañas */
-  [data-baseweb="tab-list"] {
-    background: var(--layer);
-    padding: 0.5rem;
-    gap: 0.5rem;
-    border-radius: 8px;
-  }
+.stFileUploader input:focus,
+.stSelectbox select:focus {
+    outline: 2px solid #1e66ff;  /* Resalta al seleccionar */
+}
 
-  [data-baseweb="tab"] {
-    background: #ffffff;
-    color: var(--ink);   /* Texto negro en las pestañas */
-    border-radius: 6px;
-    padding: 1rem 1.5rem;
-    transition: background 0.3s ease;
-  }
+.stSelectbox {
+    background-color: #f0f6ff;
+    color: #0b1f44;
+    border: 1px solid #c7dbff;
+}
 
-  [aria-selected="true"][data-baseweb="tab"] {
-    background: var(--brand);
-    color: #ffffff;
-  }
+/* Preferencias */
+.st-expander header {
+    color: #0b1f44;  /* Color de texto oscuro */
+}
 
-  /* Bloques de código */
-  .code-like {
-    background: #f8f9fa;
-    border: 1px solid #dcdcdc;
-    border-radius: 8px;
-    padding: 1rem;
-    font-family: 'Courier New', monospace;
-    font-size: 1rem;
-    color: var(--ink);   /* Texto negro en los bloques de código */
-  }
+.stCheckbox label,
+.stCheckbox span,
+.stMarkdown p {
+    color: #0b1f44;  /* Hacer más oscuro el texto en las preferencias */
+}
 
-  /* Entradas de texto */
-  .stTextInput input, .stTextArea textarea {
-    background-color: #ffffff;
-    color: var(--ink);   /* Texto negro en entradas de texto */
-    border-radius: 6px;
-    border: 1px solid #dcdcdc;
-    padding: 0.6rem;
-    font-size: 1rem;
-  }
-
-  /* Color de las alertas y mensajes */
-  .stAlert {
-    background-color: #ffe7e7;
-    color: var(--ink);   /* Texto negro en las alertas */
-    border-left: 5px solid var(--err);
-  }
-
-  /* Estilo para el editor de código (en caso de no usar ace) */
-  .stTextArea, .stTextInput {
-    background-color: #ffffff;
-    border-radius: 6px;
-    border: 1px solid #dcdcdc;
-  }
-
-  /* Cuadro de guardar */
-  .stDownloadButton {
-    background-color: #f4f4f4;
-    color: var(--ink);   /* Texto negro en el botón de guardar */
-    border: 1px solid #dcdcdc;
-    border-radius: 8px;
-    padding: 0.8rem 1.5rem;
-    font-size: 1.1rem;
-    cursor: pointer;
-    transition: background 0.3s ease, transform 0.2s ease;
-  }
-
-  .stDownloadButton:hover {
-    background: var(--brand);
-    color: #ffffff;
-    transform: translateY(-2px);
-  }
-  
 </style>
 """
 
 
 def paint_header() -> None:
     st.markdown(
-        f"""
-        <div style="display:flex;align-items:center;gap:.75rem;background:#ffffff;border-bottom:1px solid #dcdcdc;padding:.6rem 1rem;">
-          <div style="font-size:1.25rem;color:#000000;">🧪</div>
+        """
+        <div class="cs-header">
+          <div style="font-size:1.25rem;color:#1e66ff;">🧪</div>
           <div>
-            <div style="color:#000000;font-weight:600;letter-spacing:.3px">Compiscript IDE</div>
-            <div style="color:#333333;font-size:.85rem">Refactor limpio • v1.0.0</div>
+            <div class="cs-title">Compiscript IDE</div>
+            <div class="cs-sub">Refactor limpio • v1.0.0</div>
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
 
 
 # ------------------ Utilidades núcleo ------------------
@@ -270,7 +271,7 @@ def to_dot_graph(tree, parser) -> str:
         "digraph G {",
         'node [shape=box, fontsize=10, fontname="Consolas"];',
         'graph [bgcolor="transparent"];',
-        'edge  [color="#7f7f7f"];',
+        'edge  [color="#5b7bd5"];',
     ]
 
     def new_id() -> str:
@@ -291,9 +292,9 @@ def to_dot_graph(tree, parser) -> str:
     def paint(ctx) -> str:
         me = new_id()
         is_rule = isinstance(ctx, RuleContext)
-        color = "#5aa9e6" if is_rule else "#d7ba7d"
+        color = "#3f7ef7" if is_rule else "#7aa2ff"
         shape = "box" if is_rule else "ellipse"
-        lines.append(f'{me} [label={label(ctx)}, color="{color}", fontcolor="#ffffff", fillcolor="#1c2030", style="filled", shape={shape}];')
+        lines.append(f'{me} [label={label(ctx)}, color="{color}", fontcolor="#0b1f44", fillcolor="#eaf2ff", style="filled", shape={shape}];')
         for i in range(ctx.getChildCount()):
             ch = ctx.getChild(i)
             cid = paint(ch)
@@ -411,7 +412,7 @@ if HAS_ACE:
     code = st_ace(
         value=st.session_state.code,
         language="typescript",
-        theme="monokai",
+        theme="github",
         height=360,
         key=f"ace_{ace_key}",
         auto_update=auto_compile,
