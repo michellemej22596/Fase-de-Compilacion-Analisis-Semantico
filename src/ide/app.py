@@ -1,3 +1,4 @@
+# app.py 
 from __future__ import annotations
 import contextlib
 import json
@@ -9,218 +10,108 @@ from typing import Any
 import streamlit as st
 from streamlit.components.v1 import html
 
-# Definimos las rutas base del proyecto
-SRC_DIR = Path(__file__).resolve().parents[1]  # Obtiene el directorio padre, es decir, .../repo/src
-REPO_ROOT = SRC_DIR.parent                     # .../repo
+# --- Rutas/paths base ---
+# Estructura esperada:
+# repo_root/
+#   ├─ program/
+#   │   ├─ ide/app.py (este archivo)
+#   │   ├─ parsing/
+#   │   ├─ semantic/
+#   │   ├─ codegen/
+#   │   └─ tests/
 
-# Aseguramos que los paquetes bajo src/ sean importables sin depender de PYTHONPATH externo
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+PROGRAM_DIR = Path(__file__).resolve().parent.parent  # .../program
+REPO_ROOT = PROGRAM_DIR.parent                         # .../repo
 
-# Importación de dependencias internas del compilador
+# Garantiza que los paquetes bajo program/ sean importables
+if str(PROGRAM_DIR) not in sys.path:
+    sys.path.insert(0, str(PROGRAM_DIR))
+
+# Dependencias internas del compilador
 from parsing.antlr import build_from_text, ParseResult  # type: ignore
 with contextlib.suppress(Exception):
     from parsing.antlr.CompiscriptLexer import CompiscriptLexer  # type: ignore
 
-# Intentamos importar Streamlit ACE para el editor de código, si no está disponible, se marca como False.
 try:
     from streamlit_ace import st_ace
     HAS_ACE = True
 except Exception:
     HAS_ACE = False
 
-# Intentamos importar la función de análisis semántico
 try:
     from semantic.checker import analyze  # type: ignore
-except Exception as _ex:  # Mensaje diferido a la UI si hace falta
+    HAS_SEMANTIC = True
+except Exception as _ex:
     analyze = None  # type: ignore
+    HAS_SEMANTIC = False
 
-# Definición del estilo CSS para la app de Streamlit.
-_DEF_CSS = _NEW_CSS = """
+try:
+    from codegen.code_generator import CodeGeneratorVisitor  # type: ignore
+    from codegen.quadruple import QuadrupleList  # type: ignore
+    HAS_CODEGEN = True
+except Exception as _ex:
+    CodeGeneratorVisitor = None  # type: ignore
+    QuadrupleList = None  # type: ignore
+    HAS_CODEGEN = False
+
+# ------------------ Estilos y theming ------------------
+_DEF_CSS = """
 <style>
   :root{
-    --bg:#ffffff;              /* Fondo principal (blanco) */
-    --layer:#f0f6ff;           /* Paneles/tiles (azul muy claro) */
-    --ink:#0b1f44;             /* Texto principal (azul marino) */
-    --ink-sub:#3b5b8a;         /* Texto secundario */
-    --brand:#1e66ff;           /* Azul de marca / primario */
-    --brand-600:#1553d6;       /* Hover/active */
-    --ok:#2e7d32;
-    --warn:#ffca3a;
-    --err:#e63946;
-    --header-bg:#e8f0ff;       /* Cabecera clara */
-    --header-text:#0b1f44;
-    --message-bg:#edf2ff;      /* Tarjetas / alerts */
-    --border:#c7dbff;          /* Bordes suaves azules */
+    --bg: #ffffff;      /* fondo blanco */
+    --layer: #f5f7fa;   /* paneles gris claro */
+    --ink: #1a1d29;     /* texto oscuro */
+    --ink-sub: #5a6270; /* texto tenue */
+    --brand: #2563eb;   /* acento azul */
+    --ok: #059669;      /* verde */
+    --warn: #d97706;    /* naranja */
+    --err: #dc2626;     /* rojo */
   }
-
-  /* App */
-  .stApp{
-    background:var(--bg);
-    color:var(--ink);
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  .stApp{ background: var(--bg); color: var(--ink); }
+  [data-testid="stSidebar"]{ background: var(--layer) !important; border-right: 1px solid #e5e7eb; }
+  .block-container{ padding-top: 1rem; }
+  h1,h2,h3,h4,h5,h6{ color: var(--ink) !important; }
+  .stButton>button{
+    background: var(--layer); color: var(--ink); border: 1px solid #d1d5db;
+    transition: transform .06s ease-in-out;
   }
-
-  /* Sidebar (antes gris) */
-  [data-testid="stSidebar"]{
-    background:var(--layer) !important;
-    border-right:1px solid var(--border);
-  }
-
-  /* Cabecera superior */
-  .stApp > header{
-    background:var(--header-bg) !important;
-    color:var(--header-text) !important;
-    padding:20px 30px;
-    border-bottom:1px solid var(--border);
-    border-radius:10px 10px 0 0;
-    box-shadow:none;
-  }
-  .stApp > header .header-logo{ color:var(--brand); }
-  .stApp > header h1,
-  .stApp > header .header-text{ color:var(--header-text) !important; }
-
-  /* Títulos y texto */
-  .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
-  .stMarkdown h4, .stMarkdown h5, .stMarkdown h6{
-    color:var(--ink);
-  }
-  .stMarkdown p, .stCaption, .st-emotion-cache-10trblm{
-    color:var(--ink);
-  }
-  a{ color:var(--brand); }
-
-  /* Contenedores / cards */
-  .stAlert, .stInfo, .stWarning, .stSuccess, .stError{
-    background:var(--message-bg) !important;
-    color:var(--ink) !important;
-    border:1px solid var(--border) !important;
-  }
-  .stAlert{ border-left:5px solid var(--err) !important; }
-
-  /* Tabs */
-  [data-baseweb="tab-list"]{
-    background:var(--layer);
-    padding:.5rem; gap:.5rem; border-radius:10px; border:1px solid var(--border);
-  }
-  [data-baseweb="tab"]{
-    background:#ffffff; color:var(--ink);
-    border-radius:8px; padding:0.75rem 1.1rem; border:1px solid var(--border);
-  }
-  [aria-selected="true"][data-baseweb="tab"]{
-    background:var(--brand); color:#fff; border-color:var(--brand);
-  }
-
-  /* Inputs */
-  .stTextInput input, .stTextArea textarea{
-    background:#fff; color:var(--ink);
-    border:1px solid var(--border); border-radius:8px; padding:.6rem;
-  }
-
-  /* Botones (incluye Guardar/Download) */
-  .stButton > button,
-  .stDownloadButton > button,
-  .st-emotion-cache-7ym5gk button,              /* fallback */
-  [data-testid="baseButton-secondary"]{
-    background:#ffffff; color:var(--ink);
-    border:1px solid var(--border); border-radius:10px;
-    padding:.7rem 1.2rem; transition:background .2s, transform .15s;
-  }
-  .stButton > button:hover,
-  .stDownloadButton > button:hover,
-  [data-testid="baseButton-secondary"]:hover{
-    background:var(--brand); color:#fff; transform:translateY(-1px);
-    border-color:var(--brand);
-  }
-
-  /* Code blocks */
-  .code-like, .stCode, pre, code{
-    background:#f7faff !important;
-    border:1px solid var(--border) !important;
-    color:var(--ink) !important; border-radius:10px; padding:1rem;
-  }
-
-  /* Editor Ace (cuando no uses tema oscuro) */
-  .ace_editor{
-    background:#ffffff !important;
-    color:var(--ink) !important;
-    border:1px solid var(--border); border-radius:10px;
-  }
-  .ace_gutter{ background:#eaf2ff !important; color:#405b9a !important; }
-  .ace_marker-layer .ace_active-line{ background:#dfe8ff !important; }
-  .ace_cursor{ color:var(--brand) !important; }
-
-  /* Tablas/Dataframe */
-  .stDataFrame, .st-emotion-cache-1s3b6h1{
-    background:#fff; border:1px solid var(--border); border-radius:10px;
-  }
-
-  /* Paneles/expander */
-  .st-expander{
-    background:#fff; border:1px solid var(--border); border-radius:12px !important;
-  }
-
-  /* Encabezado compacto del título personalizado */
-  .cs-header{
-    display:flex;align-items:center;gap:.75rem;background:#ffffff;
-    border-bottom:1px solid var(--border);padding:.6rem 1rem;
-  }
-  .cs-title{ color:var(--ink); font-weight:700; letter-spacing:.3px; }
-  .cs-sub{ color:var(--ink-sub); font-size:.85rem; }
-
-  /* Uploader y selector de ejemplos */
-.stFileUploader,
-.stSelectbox,
-.stFileUploader input {
-    background-color: #f0f6ff;  /* Fondo claro azul */
-    color: #0b1f44;  /* Texto oscuro */
-    border: 1px solid #c7dbff;  /* Borde suave azul */
-}
-
-.stFileUploader input:focus,
-.stSelectbox select:focus {
-    outline: 2px solid #1e66ff;  /* Resalta al seleccionar */
-}
-
-.stSelectbox {
-    background-color: #f0f6ff;
-    color: #0b1f44;
-    border: 1px solid #c7dbff;
-}
-
-/* Preferencias */
-.st-expander header {
-    color: #0b1f44;  /* Color de texto oscuro */
-}
-
-.stCheckbox label,
-.stCheckbox span,
-.stMarkdown p {
-    color: #0b1f44;  /* Hacer más oscuro el texto en las preferencias */
-}
-
+  .stButton>button:hover{ background: var(--brand); color: #fff; transform: translateY(-1px); }
+  [data-baseweb="tab-list"]{ background: var(--layer); padding: .25rem; gap: .25rem; }
+  [data-baseweb="tab"]{ background: #e5e7eb; color: var(--ink); border-radius: 6px; }
+  [aria-selected="true"][data-baseweb="tab"]{ background: var(--brand); color: #fff; }
+  .code-like{ background:#f5f7fa; border:1px solid #e5e7eb; border-radius:6px; padding:.5rem .75rem; font-family:Consolas,Monaco,monospace; }
+  
+  /* Checkbox labels visibility */
+  [data-testid="stCheckbox"] label { color: var(--ink) !important; }
+  [data-testid="stCheckbox"] label span { color: var(--ink) !important; }
+  .stCheckbox label { color: var(--ink) !important; }
+  .stCheckbox label p { color: var(--ink) !important; margin: 0; }
 </style>
 """
 
-# Función que pinta el encabezado de la aplicación en Streamlit
+
+
 def paint_header() -> None:
     st.markdown(
-        """
-        <div class="cs-header">
-          <div style="font-size:1.25rem;color:#1e66ff;">🧪</div>
+        f"""
+        <div style="display:flex;align-items:center;gap:.75rem;background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:.6rem 1rem;">
+          <div style="font-size:1.25rem">🧪</div>
           <div>
-            <div class="cs-title">Compiscript IDE</div>
+            <div style="color:#2563eb;font-weight:600;letter-spacing:.3px">Compiscript IDE</div>
+            <div style="color:#5a6270;font-size:.85rem">Refactor limpio • v1.0.0</div>
           </div>
         </div>
         """,
-        unsafe_allow_html=True,  # Permitimos HTML no seguro para insertar el encabezado
+        unsafe_allow_html=True,
     )
+
+
 
 # ------------------ Utilidades núcleo ------------------
 @st.cache_data(show_spinner=False)
 def discover_samples() -> dict[str, str]:
     """Escanea los directorios de ejemplo y devuelve {ruta_visible: contenido}."""
-    buckets = [REPO_ROOT / "program", REPO_ROOT / "src/tests"]  # Definimos los directorios de donde leer los ejemplos
+    buckets = [PROGRAM_DIR / "tests", REPO_ROOT / "examples"]
     out: dict[str, str] = {}
     for root in buckets:
         if not root.exists():
@@ -230,11 +121,11 @@ def discover_samples() -> dict[str, str]:
                 continue
             if p.suffix.lower() in {".cps", ".cspt", ".txt", ".code"}:
                 with contextlib.suppress(Exception):
-                    out[f"{root.name}/{p.name}"] = p.read_text(encoding="utf-8")  # Añadimos el contenido de los archivos
+                    out[f"{root.name}/{p.name}"] = p.read_text(encoding="utf-8")
     return out
 
 
-# Función que normaliza la tabla de símbolos para mostrarla en una tabla comprensible.
+
 def normalize_symbol_table(payload: Any) -> list[dict[str, str]]:
     """Aplana la tabla de símbolos devuelta por el checker a filas tabulares."""
     scopes = payload if isinstance(payload, list) else [payload]
@@ -253,7 +144,7 @@ def normalize_symbol_table(payload: Any) -> list[dict[str, str]]:
     return rows
 
 
-# Función que convierte el árbol ANTLR a un formato DOT para usarlo en Graphviz y visualizarlo en Streamlit
+
 def to_dot_graph(tree, parser) -> str:
     """Convierte el árbol ANTLR a DOT para visualizar con Graphviz en Streamlit."""
     from antlr4 import RuleContext
@@ -265,7 +156,7 @@ def to_dot_graph(tree, parser) -> str:
         "digraph G {",
         'node [shape=box, fontsize=10, fontname="Consolas"];',
         'graph [bgcolor="transparent"];',
-        'edge  [color="#5b7bd5"];',
+        'edge  [color="#7f7f7f"];',
     ]
 
     def new_id() -> str:
@@ -286,9 +177,9 @@ def to_dot_graph(tree, parser) -> str:
     def paint(ctx) -> str:
         me = new_id()
         is_rule = isinstance(ctx, RuleContext)
-        color = "#3f7ef7" if is_rule else "#7aa2ff"
+        color = "#5aa9e6" if is_rule else "#d7ba7d"
         shape = "box" if is_rule else "ellipse"
-        lines.append(f'{me} [label={label(ctx)}, color="{color}", fontcolor="#0b1f44", fillcolor="#eaf2ff", style="filled", shape={shape}];')
+        lines.append(f'{me} [label={label(ctx)}, color="{color}", fontcolor="#ffffff", fillcolor="#1c2030", style="filled", shape={shape}];')
         for i in range(ctx.getChildCount()):
             ch = ctx.getChild(i)
             cid = paint(ch)
@@ -300,7 +191,7 @@ def to_dot_graph(tree, parser) -> str:
     return "\n".join(lines)
 
 
-# Función que extrae la información de los tokens desde el resultado de análisis sintáctico.
+
 def token_table(parse_result: ParseResult) -> list[dict[str, int | str]]:
     ts = parse_result.tokens
     ts.fill()
@@ -327,6 +218,7 @@ def token_table(parse_result: ParseResult) -> list[dict[str, int | str]]:
     return rows
 
 
+
 # ------------------ Estado y configuración ------------------
 DEFAULT_SNIPPET = (
     "const x: integer = 1;\n"
@@ -342,14 +234,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown(_DEF_CSS, unsafe_allow_html=True)  # Se aplica el CSS para darle estilo a la app.
-paint_header()  # Pinta el encabezado en la app.
+st.markdown(_DEF_CSS, unsafe_allow_html=True)
+paint_header()
 
-# Inicializa session_state con valores predeterminados para evitar errores de acceso a atributos no inicializados.
+# Inicializa session_state de forma compacta
 st.session_state.setdefault("code", DEFAULT_SNIPPET)
 st.session_state.setdefault("console", "")
 st.session_state.setdefault("ace_key", 0)
 st.session_state.setdefault("last_result", None)
+st.session_state.setdefault("quadruples", None)
+st.session_state.setdefault("enable_codegen", True)
 
 # ------------------ Sidebar ------------------
 with st.sidebar:
@@ -371,7 +265,7 @@ with st.sidebar:
     if uploaded is not None:
         buf = _decode(uploaded.getvalue())
         st.session_state.code = buf
-        st.session_state.console += f"📂 Archivo importado → {uploaded.name}\n"
+        st.session_state.console += f"📄 Cargado: {uploaded.name}\n"
         st.session_state.ace_key += 1
         st.session_state["_force_compile"] = True
         st.session_state["uploaded_name"] = uploaded.name
@@ -385,7 +279,7 @@ with st.sidebar:
     if choice != "(ninguno)":
         if st.session_state.get("_example_name") != choice:
             st.session_state.code = samples[choice]
-            st.session_state.console += f"🧰 Ejemplo abierto → {choice}\n"
+            st.session_state.console += f"📦 Ejemplo cargado: {choice}\n"
             st.session_state.ace_key += 1
             st.session_state["_force_compile"] = True
             st.session_state["_example_name"] = choice
@@ -396,6 +290,9 @@ with st.sidebar:
         show_tokens = st.checkbox("Ver tokens", value=False)
         show_dot = st.checkbox("Ver árbol (DOT)", value=True)
         show_string_tree = st.checkbox("Ver árbol (texto)", value=False)
+        if HAS_CODEGEN:
+            enable_codegen = st.checkbox("Generar código intermedio", value=st.session_state.enable_codegen)
+            st.session_state.enable_codegen = enable_codegen
 
     st.markdown("---")
     st.caption("Compiscript IDE • Streamlit • Refactor limpio")
@@ -407,7 +304,7 @@ if HAS_ACE:
     code = st_ace(
         value=st.session_state.code,
         language="typescript",
-        theme="github",
+        theme="monokai",
         height=360,
         key=f"ace_{ace_key}",
         auto_update=auto_compile,
@@ -434,32 +331,47 @@ col3.download_button(
 # Dispara compilación si hubo click o forzado por carga/ejemplo
 run_now = run_now or st.session_state.pop("_force_compile", False)
 
-# ------------------ Pipeline: parse + semántica ------------------
+# ------------------ Pipeline: parse + semántica + codegen ------------------
 if run_now or (auto_compile and st.session_state.code.strip()):
     try:
         res = build_from_text(st.session_state.code, entry_rule="program")
         st.session_state.last_result = res
         st.session_state.semantic = None
+        st.session_state.quadruples = None
+        
         if res.ok():
-            st.session_state.console += "✔️ Sintaxis: sin problemas.\n"
-            if analyze is None:
-                st.session_state.console += "⚠️ Analizador semántico no disponible (semantic.checker).\n"
+            st.session_state.console += "✅ Análisis sintáctico OK.\n"
+            
+            if not HAS_SEMANTIC:
+                st.session_state.console += "⚠️ El módulo semantic.checker no está disponible.\n"
             else:
                 try:
                     sem = analyze(res.tree)
                     st.session_state.semantic = sem
                     errs = sem.get("errors", []) if isinstance(sem, dict) else []
                     if errs:
-                        st.session_state.console += f"❗ Semántica: {len(errs)} problema(s) detectado(s).\n"
+                        st.session_state.console += f"⚠️ Errores semánticos: {len(errs)}\n"
                     else:
-                        st.session_state.console += "✔️ Semántica: OK.\n"
-                except Exception as ex:  # pragma: no cover
-                    st.session_state.console += f"💣 Falló semántica: {ex}\n"
+                        st.session_state.console += "✅ Análisis semántico sin errores.\n"
+                        
+                        if HAS_CODEGEN and st.session_state.enable_codegen:
+                            try:
+                                codegen = CodeGeneratorVisitor(sem.get("symbols"))
+                                codegen.visit(res.tree)
+                                st.session_state.quadruples = codegen.quads
+                                st.session_state.console += f"✅ Código intermedio generado: {len(codegen.quads.quads)} cuádruplos.\n"
+                            except Exception as ex:
+                                st.session_state.console += f"💥 Error en generación de código: {ex}\n"
+                        elif not HAS_CODEGEN:
+                            st.session_state.console += "⚠️ El módulo codegen no está disponible.\n"
+                            
+                except Exception as ex:
+                    st.session_state.console += f"💥 Excepción en semántica: {ex}\n"
         else:
-            st.session_state.console += f"⛔ Sintaxis: {len(res.errors)} error(es).\n"
-    except Exception as ex:  # pragma: no cover
+            st.session_state.console += f"❌ Errores de sintaxis: {len(res.errors)}\n"
+    except Exception as ex:
         st.session_state.last_result = None
-        st.session_state.console += f"💣 Error no controlado: {ex}\n"
+        st.session_state.console += f"💥 Excepción: {ex}\n"
 
 # ------------------ Consola ------------------
 st.markdown("## 🖥️ Salida")
@@ -469,8 +381,13 @@ st.code(st.session_state.console or "// La salida aparecerá aquí...", language
 st.markdown("## 📊 Resultados")
 res: ParseResult | None = st.session_state.last_result
 sem = st.session_state.get("semantic")
+quads: QuadrupleList | None = st.session_state.get("quadruples")
 
-tabs = st.tabs(["Diagnósticos", "Árbol", "Tokens"])
+tab_names = ["Diagnósticos", "Árbol", "Tokens"]
+if HAS_CODEGEN and quads is not None:
+    tab_names.append("Código Intermedio")
+
+tabs = st.tabs(tab_names)
 
 with tabs[0]:
     if not res:
@@ -570,3 +487,69 @@ with tabs[2]:
         )
     else:
         st.info("Activa \"Ver tokens\" en Preferencias para listarlos.")
+
+if HAS_CODEGEN and quads is not None and len(tab_names) == 4:
+    with tabs[3]:
+        st.markdown("### Cuádruplos Generados")
+        
+        if len(quads.quads) == 0:
+            st.info("No se generaron cuádruplos.")
+        else:
+            # Mostrar estadísticas
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Cuádruplos", len(quads.quads))
+            
+            # Contar temporales únicos
+            temps = set()
+            for q in quads.quads:
+                for arg in [q.arg1, q.arg2, q.result]:
+                    if arg and isinstance(arg, str) and arg.startswith('t'):
+                        temps.add(arg)
+            col2.metric("Temporales Usados", len(temps))
+            
+            # Contar etiquetas únicas
+            labels = set()
+            for q in quads.quads:
+                if q.op == "LABEL" or (q.arg1 and isinstance(q.arg1, str) and q.arg1.startswith('L_')):
+                    labels.add(q.arg1 if q.op == "LABEL" else q.arg1)
+            col3.metric("Etiquetas", len(labels))
+            
+            st.markdown("---")
+            
+            # Tabla de cuádruplos
+            quad_data = []
+            for i, q in enumerate(quads.quads):
+                quad_data.append({
+                    "Índice": i,
+                    "Operador": q.op,
+                    "Arg1": str(q.arg1) if q.arg1 is not None else "",
+                    "Arg2": str(q.arg2) if q.arg2 is not None else "",
+                    "Resultado": str(q.result) if q.result is not None else ""
+                })
+            
+            st.dataframe(
+                quad_data,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Índice": st.column_config.NumberColumn(width="small"),
+                    "Operador": st.column_config.TextColumn(width="medium"),
+                    "Arg1": st.column_config.TextColumn(width="medium"),
+                    "Arg2": st.column_config.TextColumn(width="medium"),
+                    "Resultado": st.column_config.TextColumn(width="medium"),
+                }
+            )
+            
+            # Botones de descarga
+            col1, col2 = st.columns(2)
+            quad_text = quads.to_string()
+            col1.download_button(
+                "💾 Descargar Cuádruplos (.quad)",
+                data=quad_text.encode("utf-8"),
+                file_name="quadruples.quad",
+                mime="text/plain",
+                use_container_width=True
+            )
+            
+            if col2.button("📋 Ver como texto", use_container_width=True):
+                st.code(quad_text, language="text")
