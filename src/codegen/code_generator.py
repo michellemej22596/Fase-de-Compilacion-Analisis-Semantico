@@ -748,9 +748,21 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
     def visitPrintStatement(self, ctx: CompiscriptParser.PrintStatementContext):
         """
         Genera código para sentencias de impresión.
-        TODO: Implementar en fase posterior.
+        
+        Estructura:
+            print(expression);
+        
+        Cuádruplos generados:
+            evaluar expression -> temp/var
+            PRINT temp/var
         """
-        # Placeholder
+        if ctx.expression():
+            # Evaluar la expresión a imprimir
+            value = self.visit(ctx.expression())
+            
+            # Generar cuádruplo PRINT
+            self.quads.emit(QuadOp.PRINT, value, None, None)
+        
         return None
 
     def visitReturnStatement(self, ctx: CompiscriptParser.ReturnStatementContext):
