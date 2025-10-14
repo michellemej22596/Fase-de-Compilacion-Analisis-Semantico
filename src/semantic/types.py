@@ -1,60 +1,88 @@
-from __future__ import annotations  # Permite usar anotaciones de tipo hacia adelante (por ejemplo, clases que se refieren a sí mismas).
-from dataclasses import dataclass  # Usamos `dataclass` para generar clases de manera más sencilla y estructurada.
-from typing import Optional, Dict  # Importa los tipos `Optional` y `Dict` para tipos más flexibles.
+BOOL  = "boolean"
+INT   = "integer"
+STR   = "string"
+FLOAT = "float"
+NULL  = "null"
+VOID  = "void"
 
-# Clase base para representar los tipos. Los tipos se definen como clases hijas de esta.
-class Type:
-    name: str = "<type>"  # Nombre del tipo, se establece por defecto a "<type>".
+def get_type_size(type_str: str) -> int:
+    """
+    Retorna el tamaño en bytes de un tipo.
+    Útil para calcular offsets en registros de activación.
+    """
+    if type_str in (INT, FLOAT, BOOL):
+        return 4  # 4 bytes para tipos básicos
+    elif type_str == STR:
+        return 4  # 4 bytes para puntero a string
+    elif is_array(type_str):
+        return 4  # 4 bytes para puntero a array
+    elif is_class(type_str):
+        return 4  # 4 bytes para puntero a objeto
+    elif type_str == NULL:
+        return 4  # 4 bytes para null pointer
+    elif type_str == VOID:
+        return 0  # void no ocupa espacio
+    else:
+        return 4  # Default: 4 bytes
 
-    # Método para comparar si dos tipos son iguales
-    def __eq__(self, other):
-        return isinstance(other, Type) and self.name == other.name
+# Predicados para verificación de tipos
+def is_boolean(t):
+    return t == BOOL
 
-    # Método para mostrar una representación del tipo como cadena
-    def __str__(self):
-        return self.name
+def is_integer(t):
+    return t == INT
 
+def is_float(t):
+    return t == FLOAT
 
-# Tipos primitivos derivados de la clase base `Type`.
-class IntType(Type):    name = "Int"    # Tipo de datos entero.
-class FloatType(Type):  name = "Float"  # Tipo de datos con punto flotante.
-class BoolType(Type):   name = "Bool"   # Tipo de datos booleano.
-class StringType(Type): name = "String" # Tipo de datos cadena de texto.
-class NullType(Type):   name = "Null"   # Tipo nulo, usado para representar la ausencia de valor.
-class VoidType(Type):   name = "Void"   # Tipo vacío, usado principalmente para funciones que no devuelven valor.
+def is_numeric(t):
+    return t in (INT, FLOAT)
 
+def is_string(t):
+    return t == STR
 
-# Clase que representa un tipo de arreglo, que contiene un tipo de elemento.
-@dataclass(frozen=True)  # Usamos `frozen=True` para que esta clase sea inmutable (una vez creada no puede modificarse).
-class ArrayType(Type):
-    elem: Type  # Tipo de los elementos del arreglo.
+def is_null(t):
+    return t == NULL
 
-    def __str__(self):
-        return f"[{self.elem}]"  # Representación en cadena de un arreglo con el tipo de sus elementos.
+def is_void(t):
+    return t == VOID
 
-    @property
-    def name(self):
-        return f"Array<{self.elem}>"  # Nombre del tipo, p.ej., "Array<Int>".
+# Compatibilidad de tipos
+def are_compatible(expected, actual):
+    # Igualdad exacta
+    if expected == actual:
+        return True
 
+    # Numéricos compatibles entre sí (promoción implícita int<->float)
+    if expected in (INT, FLOAT) and actual in (INT, FLOAT):
+        return True
 
-# Clase que representa un tipo de clase personalizada, que contiene un nombre de clase y sus miembros.
-@dataclass  # Usamos `dataclass` porque esta clase tiene datos asociados (nombre de clase y miembros).
-class ClassType(Type):
-    class_name: str  # Nombre de la clase.
-    members: Dict[str, Type]  # Miembros de la clase, representados por un diccionario de nombre -> tipo.
+    # NULL compatible con cualquier tipo (opcional)
+    if actual == NULL:
+        return True
 
-    def __str__(self):
-        return self.class_name  # Representación de la clase como su nombre.
+    return False
 
-    @property
-    def name(self):
-        return self.class_name  # El nombre de la clase es el nombre de la clase en sí.
+# Función para crear tipos de array (mantenemos funcionalidad existente)
+def array_type(elem_type):
+    return f"array<{elem_type}>"
 
+def is_array(t):
+    return isinstance(t, str) and t.startswith("array<")
 
-# Instancias singleton de los tipos primitivos, para evitar crear múltiples instancias del mismo tipo.
-INT    = IntType()    # Instancia del tipo Int.
-FLOAT  = FloatType()  # Instancia del tipo Float.
-BOOL   = BoolType()   # Instancia del tipo Bool.
-STR    = StringType() # Instancia del tipo String.
-NULL   = NullType()   # Instancia del tipo Null.
-VOID   = VoidType()   # Instancia del tipo Void.
+def get_array_element_type(array_type_str):
+    if is_array(array_type_str):
+        return array_type_str[6:-1]  # Extrae el tipo entre "array<" y ">"
+    return None
+
+# Función para crear tipos de clase
+def class_type(class_name):
+    return f"class<{class_name}>"
+
+def is_class(t):
+    return isinstance(t, str) and t.startswith("class<")
+
+def get_class_name(class_type_str):
+    if is_class(class_type_str):
+        return class_type_str[6:-1]  # Extrae el nombre entre "class<" y ">"
+    return None
