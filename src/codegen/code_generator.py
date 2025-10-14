@@ -409,8 +409,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         # Placeholder
         return None
 
-    # ==================== STATEMENTS (PLACEHOLDER) ====================
-    # Se implementarán en la siguiente fase
+    # ==================== STATEMENTS ====================
 
     def visitExpressionStatement(self, ctx: CompiscriptParser.ExpressionStatementContext):
         """
@@ -434,6 +433,258 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         
         return None
 
+    def visitIfStatement(self, ctx: CompiscriptParser.IfStatementContext):
+        """
+        Genera código para sentencias if/else.
+        
+        Estructura:
+            if (condition) {
+                // then_block
+            } else {
+                // else_block
+            }
+        
+        Cuádruplos generados:
+            evaluar condition -> temp
+            IF_FALSE temp GOTO label_else
+            código del then_block
+            GOTO label_end
+            LABEL label_else
+            código del else_block (si existe)
+            LABEL label_end
+        """
+        # Evaluar la condición
+        condition = self.visit(ctx.expression())
+        
+        # Generar etiquetas
+        label_else = self.label_manager.new_label("IF_ELSE")
+        label_end = self.label_manager.new_label("IF_END")
+        
+        # Si la condición es falsa, saltar a else o al final
+        has_else = len(ctx.block()) > 1
+        jump_target = label_else if has_else else label_end
+        self.quads.emit(QuadOp.IF_FALSE, condition, jump_target, None)
+        
+        # Generar código del bloque then
+        self.visit(ctx.block(0))
+        
+        # Si hay else, saltar al final después del then
+        if has_else:
+            self.quads.emit(QuadOp.GOTO, label_end, None, None)
+            
+            # Etiqueta para el bloque else
+            self.quads.emit(QuadOp.LABEL, label_else, None, None)
+            
+            # Generar código del bloque else
+            self.visit(ctx.block(1))
+        
+        # Etiqueta de salida
+        self.quads.emit(QuadOp.LABEL, label_end, None, None)
+        
+        return None
+
+    def visitWhileStatement(self, ctx: CompiscriptParser.WhileStatementContext):
+        """
+        Genera código para sentencias while.
+        
+        Estructura:
+            while (condition) {
+                // body
+            }
+        
+        Cuádruplos generados:
+            LABEL label_start
+            evaluar condition -> temp
+            IF_FALSE temp GOTO label_end
+            código del body
+            GOTO label_start
+            LABEL label_end
+        """
+        # Generar etiquetas
+        label_start = self.label_manager.new_label("WHILE_START")
+        label_end = self.label_manager.new_label("WHILE_END")
+        
+        # Registrar etiquetas para break/continue
+        self._in_loop += 1
+        self.loop_manager.push_loop(label_start, label_end)
+        
+        # Etiqueta de inicio del loop
+        self.quads.emit(QuadOp.LABEL, label_start, None, None)
+        
+        # Evaluar la condición
+        condition = self.visit(ctx.expression())
+        
+        # Si la condición es falsa, salir del loop
+        self.quads.emit(QuadOp.IF_FALSE, condition, label_end, None)
+        
+        # Generar código del cuerpo
+        self.visit(ctx.block())
+        
+        # Saltar de vuelta al inicio
+        self.quads.emit(QuadOp.GOTO, label_start, None, None)
+        
+        # Etiqueta de salida
+        self.quads.emit(QuadOp.LABEL, label_end, None, None)
+        
+        # Desregistrar loop
+        self.loop_manager.pop_loop()
+        self._in_loop -= 1
+        
+        return None
+
+    def visitDoWhileStatement(self, ctx: CompiscriptParser.DoWhileStatementContext):
+        """
+        Genera código para sentencias do-while.
+        
+        Estructura:
+            do {
+                // body
+            } while (condition);
+        
+        Cuádruplos generados:
+            LABEL label_start
+            código del body
+            evaluar condition -> temp
+            IF_TRUE temp GOTO label_start
+            LABEL label_end
+        """
+        # Generar etiquetas
+        label_start = self.label_manager.new_label("DO_START")
+        label_end = self.label_manager.new_label("DO_END")
+        
+        # Registrar etiquetas para break/continue
+        self._in_loop += 1
+        self.loop_manager.push_loop(label_start, label_end)
+        
+        # Etiqueta de inicio del loop
+        self.quads.emit(QuadOp.LABEL, label_start, None, None)
+        
+        # Generar código del cuerpo
+        self.visit(ctx.block())
+        
+        # Evaluar la condición
+        condition = self.visit(ctx.expression())
+        
+        # Si la condición es verdadera, volver al inicio
+        self.quads.emit(QuadOp.IF_TRUE, condition, label_start, None)
+        
+        # Etiqueta de salida
+        self.quads.emit(QuadOp.LABEL, label_end, None, None)
+        
+        # Desregistrar loop
+        self.loop_manager.pop_loop()
+        self._in_loop -= 1
+        
+        return None
+
+    def visitForStatement(self, ctx: CompiscriptParser.ForStatementContext):
+        """
+        Genera código para sentencias for.
+        
+        Estructura:
+            for (init; condition; increment) {
+                // body
+            }
+        
+        Cuádruplos generados:
+            código de init
+            LABEL label_start
+            evaluar condition -> temp (si existe)
+            IF_FALSE temp GOTO label_end (si existe condition)
+            código del body
+            LABEL label_continue
+            código de increment (si existe)
+            GOTO label_start
+            LABEL label_end
+        """
+        # Generar código de inicialización
+        if ctx.variableDeclaration():
+            self.visit(ctx.variableDeclaration())
+        elif ctx.assignment():
+            self.visit(ctx.assignment())
+        
+        # Generar etiquetas
+        label_start = self.label_manager.new_label("FOR_START")
+        label_continue = self.label_manager.new_label("FOR_CONTINUE")
+        label_end = self.label_manager.new_label("FOR_END")
+        
+        # Registrar etiquetas para break/continue
+        self._in_loop += 1
+        self.loop_manager.push_loop(label_continue, label_end)
+        
+        # Etiqueta de inicio del loop
+        self.quads.emit(QuadOp.LABEL, label_start, None, None)
+        
+        # Evaluar la condición (si existe)
+        if len(ctx.expression()) > 0 and ctx.expression(0):
+            condition = self.visit(ctx.expression(0))
+            self.quads.emit(QuadOp.IF_FALSE, condition, label_end, None)
+        
+        # Generar código del cuerpo
+        self.visit(ctx.block())
+        
+        # Etiqueta para continue
+        self.quads.emit(QuadOp.LABEL, label_continue, None, None)
+        
+        # Generar código de incremento (si existe)
+        if len(ctx.expression()) > 1 and ctx.expression(1):
+            self.visit(ctx.expression(1))
+        
+        # Saltar de vuelta al inicio
+        self.quads.emit(QuadOp.GOTO, label_start, None, None)
+        
+        # Etiqueta de salida
+        self.quads.emit(QuadOp.LABEL, label_end, None, None)
+        
+        # Desregistrar loop
+        self.loop_manager.pop_loop()
+        self._in_loop -= 1
+        
+        return None
+
+    def visitBreakStatement(self, ctx):
+        """
+        Genera código para sentencias break.
+        Salta a la etiqueta de salida del loop más cercano.
+        """
+        if self._in_loop == 0:
+            # Error: break fuera de un loop (debería ser detectado en análisis semántico)
+            return None
+        
+        # Obtener la etiqueta de salida del loop actual
+        _, label_end = self.loop_manager.current_loop()
+        
+        # Generar salto a la salida
+        self.quads.emit(QuadOp.GOTO, label_end, None, None)
+        
+        return None
+
+    def visitContinueStatement(self, ctx):
+        """
+        Genera código para sentencias continue.
+        Salta a la etiqueta de continuación del loop más cercano.
+        """
+        if self._in_loop == 0:
+            # Error: continue fuera de un loop (debería ser detectado en análisis semántico)
+            return None
+        
+        # Obtener la etiqueta de continuación del loop actual
+        label_continue, _ = self.loop_manager.current_loop()
+        
+        # Generar salto a la continuación
+        self.quads.emit(QuadOp.GOTO, label_continue, None, None)
+        
+        return None
+
+    def visitBlock(self, ctx: CompiscriptParser.BlockContext):
+        """
+        Genera código para bloques de código.
+        """
+        if ctx.statement():
+            for stmt in ctx.statement():
+                self.visit(stmt)
+        return None
+
     def visitProgram(self, ctx: CompiscriptParser.ProgramContext):
         """
         Genera código para el programa completo.
@@ -444,7 +695,71 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         """
         Genera código para sentencias.
         """
-        return self.visitChildren(ctx)
+        if ctx.variableDeclaration():
+            return self.visit(ctx.variableDeclaration())
+        elif ctx.assignment():
+            return self.visit(ctx.assignment())
+        elif ctx.expressionStatement():
+            return self.visit(ctx.expressionStatement())
+        elif ctx.ifStatement():
+            return self.visit(ctx.ifStatement())
+        elif ctx.whileStatement():
+            return self.visit(ctx.whileStatement())
+        elif ctx.doWhileStatement():
+            return self.visit(ctx.doWhileStatement())
+        elif ctx.forStatement():
+            return self.visit(ctx.forStatement())
+        elif ctx.breakStatement():
+            return self.visit(ctx.breakStatement())
+        elif ctx.continueStatement():
+            return self.visit(ctx.continueStatement())
+        elif ctx.block():
+            return self.visit(ctx.block())
+        elif ctx.printStatement():
+            return self.visit(ctx.printStatement())
+        elif ctx.returnStatement():
+            return self.visit(ctx.returnStatement())
+        else:
+            return self.visitChildren(ctx)
+
+    def visitAssignment(self, ctx: CompiscriptParser.AssignmentContext):
+        """
+        Genera código para sentencias de asignación.
+        
+        Estructura:
+            identifier = expression;
+        o
+            expression.identifier = expression;
+        """
+        if ctx.Identifier() and ctx.expression():
+            expressions = ctx.expression()
+            if len(expressions) == 1:
+                # Simple assignment: identifier = expression;
+                var_name = ctx.Identifier().getText()
+                value = self.visit(expressions[0])
+                self.quads.emit(QuadOp.ASSIGN, value, None, var_name)
+            else:
+                # Property assignment: expression.identifier = expression;
+                # TODO: Implement in later phase
+                pass
+        
+        return None
+
+    def visitPrintStatement(self, ctx: CompiscriptParser.PrintStatementContext):
+        """
+        Genera código para sentencias de impresión.
+        TODO: Implementar en fase posterior.
+        """
+        # Placeholder
+        return None
+
+    def visitReturnStatement(self, ctx: CompiscriptParser.ReturnStatementContext):
+        """
+        Genera código para sentencias de retorno.
+        TODO: Implementar en fase posterior.
+        """
+        # Placeholder
+        return None
 
 
 def generate_code(tree, symbol_table: SymbolTable) -> QuadrupleList:
