@@ -509,12 +509,13 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
             LABEL label_end
         """
         # Generar etiquetas
-        label_start = self.label_manager.new_label("WHILE_START")
-        label_end = self.label_manager.new_label("WHILE_END")
+        label_start = self.label_manager.new_label("WHILE")
+        label_end = self.label_manager.new_label("WHILE")
         
         # Registrar etiquetas para break/continue
         self._in_loop += 1
-        label_start, label_end, label_continue = self.loop_manager.push_loop("WHILE")
+        # Push loop with start label as continue label for while loops
+        self.loop_manager._loop_stack.append((label_start, label_end, label_start))
         
         # Etiqueta de inicio del loop
         self.quads.emit(QuadOp.LABEL, label_start, None, None)
@@ -557,12 +558,13 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
             LABEL label_end
         """
         # Generar etiquetas
-        label_start = self.label_manager.new_label("DO_START")
-        label_end = self.label_manager.new_label("DO_END")
+        label_start = self.label_manager.new_label("DO_WHILE")
+        label_end = self.label_manager.new_label("DO_WHILE")
         
         # Registrar etiquetas para break/continue
         self._in_loop += 1
-        label_start, label_end, label_continue = self.loop_manager.push_loop("DO_WHILE")
+        # Push loop with start label as continue label for do-while loops
+        self.loop_manager._loop_stack.append((label_start, label_end, label_start))
         
         # Etiqueta de inicio del loop
         self.quads.emit(QuadOp.LABEL, label_start, None, None)
