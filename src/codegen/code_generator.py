@@ -506,7 +506,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         
         # Registrar etiquetas para break/continue
         self._in_loop += 1
-        self.loop_manager.push_loop(label_start, label_end)
+        label_start, label_end, label_continue = self.loop_manager.push_loop("WHILE")
         
         # Etiqueta de inicio del loop
         self.quads.emit(QuadOp.LABEL, label_start, None, None)
@@ -554,7 +554,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         
         # Registrar etiquetas para break/continue
         self._in_loop += 1
-        self.loop_manager.push_loop(label_start, label_end)
+        label_start, label_end, label_continue = self.loop_manager.push_loop("DO_WHILE")
         
         # Etiqueta de inicio del loop
         self.quads.emit(QuadOp.LABEL, label_start, None, None)
@@ -610,7 +610,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         
         # Registrar etiquetas para break/continue
         self._in_loop += 1
-        self.loop_manager.push_loop(label_continue, label_end)
+        label_start, label_end, label_continue = self.loop_manager.push_loop("FOR")
         
         # Etiqueta de inicio del loop
         self.quads.emit(QuadOp.LABEL, label_start, None, None)
@@ -652,7 +652,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
             return None
         
         # Obtener la etiqueta de salida del loop actual
-        _, label_end = self.loop_manager.current_loop()
+        label_end = self.loop_manager.get_break_label()
         
         # Generar salto a la salida
         self.quads.emit(QuadOp.GOTO, label_end, None, None)
@@ -669,7 +669,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
             return None
         
         # Obtener la etiqueta de continuación del loop actual
-        label_continue, _ = self.loop_manager.current_loop()
+        label_continue = self.loop_manager.get_continue_label()
         
         # Generar salto a la continuación
         self.quads.emit(QuadOp.GOTO, label_continue, None, None)
