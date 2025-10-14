@@ -377,11 +377,19 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         """
         Genera código para asignaciones (var = expr).
         """
-        # Obtener el nombre de la variable
-        var_name = ctx.Identifier().getText()
+        # Obtener el lado izquierdo (puede ser un identificador simple o una expresión compleja)
+        lhs_ctx = ctx.leftHandSide()
+        
+        # Por ahora, solo soportamos identificadores simples
+        # TODO: Implementar acceso a propiedades y arrays en fase posterior
+        if hasattr(lhs_ctx, 'Identifier') and lhs_ctx.Identifier():
+            var_name = lhs_ctx.Identifier().getText()
+        else:
+            # Si no es un identificador simple, intentar obtenerlo del contexto
+            var_name = lhs_ctx.getText()
         
         # Evaluar la expresión del lado derecho
-        value = self.visit(ctx.expression())
+        value = self.visit(ctx.assignmentExpr())
         
         # Generar cuádruplo de asignación
         self.quads.emit(QuadOp.ASSIGN, value, None, var_name)
@@ -616,7 +624,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         self.quads.emit(QuadOp.LABEL, label_start, None, None)
         
         # Evaluar la condición (si existe)
-        if len(ctx.expression()) > 0 and ctx.expression(0):
+        if ctx.expression(0):
             condition = self.visit(ctx.expression(0))
             self.quads.emit(QuadOp.IF_FALSE, condition, label_end, None)
         
@@ -627,7 +635,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         self.quads.emit(QuadOp.LABEL, label_continue, None, None)
         
         # Generar código de incremento (si existe)
-        if len(ctx.expression()) > 1 and ctx.expression(1):
+        if ctx.expression(1):
             self.visit(ctx.expression(1))
         
         # Saltar de vuelta al inicio
