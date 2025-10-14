@@ -27,10 +27,9 @@ REPO_ROOT = PROGRAM_DIR.parent                         # .../repo
 if str(PROGRAM_DIR) not in sys.path:
     sys.path.insert(0, str(PROGRAM_DIR))
 
-# Dependencias internas del compilador
-from parsing.antlr import build_from_text, ParseResult  # type: ignore
+from parsing.antlr.parser_builder import build_from_text, ParseResult
 with contextlib.suppress(Exception):
-    from parsing.antlr.CompiscriptLexer import CompiscriptLexer  # type: ignore
+    from parsing.antlr.CompiscriptLexer import CompiscriptLexer
 
 try:
     from streamlit_ace import st_ace
@@ -44,15 +43,20 @@ try:
 except Exception as _ex:
     analyze = None  # type: ignore
     HAS_SEMANTIC = False
+    print(f"[DEBUG] Semantic import error: {_ex}")
 
 try:
     from codegen.code_generator import CodeGeneratorVisitor  # type: ignore
     from codegen.quadruple import QuadrupleList  # type: ignore
     HAS_CODEGEN = True
+    print("[DEBUG] Codegen module loaded successfully")
 except Exception as _ex:
     CodeGeneratorVisitor = None  # type: ignore
     QuadrupleList = None  # type: ignore
     HAS_CODEGEN = False
+    print(f"[DEBUG] Codegen import error: {_ex}")
+    import traceback
+    traceback.print_exc()
 
 # ------------------ Estilos y theming ------------------
 _DEF_CSS = """
@@ -356,10 +360,11 @@ if run_now or (auto_compile and st.session_state.code.strip()):
                         
                         if HAS_CODEGEN and st.session_state.enable_codegen:
                             try:
-                                codegen = CodeGeneratorVisitor(sem.get("symbols"))
+                                symbol_table = sem.get("symbols")
+                                codegen = CodeGeneratorVisitor(symbol_table)
                                 codegen.visit(res.tree)
                                 st.session_state.quadruples = codegen.quads
-                                st.session_state.console += f"✅ Código intermedio generado: {len(codegen.quads.quads)} cuádruplos.\n"
+                                st.session_state.console += f"✅ Código intermedio generado: {len(codegen.quads)} cuádruplos.\n"
                             except Exception as ex:
                                 st.session_state.console += f"💥 Error en generación de código: {ex}\n"
                         elif not HAS_CODEGEN:
@@ -492,16 +497,16 @@ if HAS_CODEGEN and quads is not None and len(tab_names) == 4:
     with tabs[3]:
         st.markdown("### Cuádruplos Generados")
         
-        if len(quads.quads) == 0:
+        if len(quads) == 0:
             st.info("No se generaron cuádruplos.")
         else:
             # Mostrar estadísticas
             col1, col2, col3 = st.columns(3)
-            col1.metric("Total Cuádruplos", len(quads.quads))
+            col1.metric("Total Cuádruplos", len(quads))
             
             # Contar temporales únicos
             temps = set()
-            for q in quads.quads:
+            for q in quads:
                 for arg in [q.arg1, q.arg2, q.result]:
                     if arg and isinstance(arg, str) and arg.startswith('t'):
                         temps.add(arg)
@@ -509,7 +514,7 @@ if HAS_CODEGEN and quads is not None and len(tab_names) == 4:
             
             # Contar etiquetas únicas
             labels = set()
-            for q in quads.quads:
+            for q in quads:
                 if q.op == "LABEL" or (q.arg1 and isinstance(q.arg1, str) and q.arg1.startswith('L_')):
                     labels.add(q.arg1 if q.op == "LABEL" else q.arg1)
             col3.metric("Etiquetas", len(labels))
@@ -518,7 +523,7 @@ if HAS_CODEGEN and quads is not None and len(tab_names) == 4:
             
             # Tabla de cuádruplos
             quad_data = []
-            for i, q in enumerate(quads.quads):
+            for i, q in enumerate(quads):
                 quad_data.append({
                     "Índice": i,
                     "Operador": q.op,
@@ -542,7 +547,7 @@ if HAS_CODEGEN and quads is not None and len(tab_names) == 4:
             
             # Botones de descarga
             col1, col2 = st.columns(2)
-            quad_text = quads.to_string()
+            quad_text = quads.dump()
             col1.download_button(
                 "💾 Descargar Cuádruplos (.quad)",
                 data=quad_text.encode("utf-8"),
