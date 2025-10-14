@@ -210,7 +210,6 @@ def paint_header() -> None:
           <div style="font-size:1.25rem;color:#1e66ff;">🧪</div>
           <div>
             <div class="cs-title">Compiscript IDE</div>
-            <div class="cs-sub">Refactor limpio • v1.0.0</div>
           </div>
         </div>
         """,

@@ -8,15 +8,15 @@ from semantic.checker import analyze
 BASE = os.path.dirname(__file__)  # mismo directorio (src/tests)
 
 OK = [
-    "Ejemplo1.cspt",
-    "Ejemplo2.cspt",
-    "Ejemplo3.cspt",
-    "Ejemplo4.cspt",
-    "Ejemplo5.cspt",
-    "Ejemplo6.cspt",
+    "tipos_01_aritmetica_integer.cps",      # Operaciones +,-,*,/ con integer
+    "tipos_02_aritmetica_float.cps",        # Operaciones +,-,*,/ con float
+    "tipos_03_logicas_boolean.cps",         # Operaciones &&,||,! con boolean
+    "tipos_04_comparaciones_mismo_tipo.cps", # Comparaciones ==,!=,<,> mismo tipo
+    "tipos_05_asignacion_correcta.cps",     # Asignación tipo correcto
+    "tipos_06_const_inicializada.cps"
 ]
 FAIL = [
-    
+
 ]
 
 def compile_file(path):
