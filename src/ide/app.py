@@ -1,9 +1,8 @@
-# app.py 
 from __future__ import annotations
+import sys
+import os
 import contextlib
 import json
-import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +12,7 @@ from streamlit.components.v1 import html
 # --- Rutas/paths base ---
 # Estructura esperada:
 # repo_root/
-#   ├─ program/
+#   ├─ src/
 #   │   ├─ ide/app.py (este archivo)
 #   │   ├─ parsing/
 #   │   ├─ semantic/
@@ -57,6 +56,15 @@ except Exception as _ex:
     print(f"[DEBUG] Codegen import error: {_ex}")
     import traceback
     traceback.print_exc()
+
+try:
+    from mips.mips_generator import MIPSGenerator  # type: ignore
+    HAS_MIPS = True
+    print("[DEBUG] MIPS generator loaded successfully")
+except Exception as _ex:
+    MIPSGenerator = None  # type: ignore
+    HAS_MIPS = False
+    print(f"[DEBUG] MIPS import error: {_ex}")
 
 # ------------------ Estilos y theming ------------------
 _DEF_CSS = """
@@ -247,6 +255,7 @@ st.session_state.setdefault("console", "")
 st.session_state.setdefault("ace_key", 0)
 st.session_state.setdefault("last_result", None)
 st.session_state.setdefault("quadruples", None)
+st.session_state.setdefault("mips_code", None)
 st.session_state.setdefault("enable_codegen", True)
 
 # ------------------ Sidebar ------------------
@@ -342,6 +351,7 @@ if run_now or (auto_compile and st.session_state.code.strip()):
         st.session_state.last_result = res
         st.session_state.semantic = None
         st.session_state.quadruples = None
+        st.session_state.mips_code = None  # Reset MIPS code on new analysis
         
         if res.ok():
             st.session_state.console += "✅ Análisis sintáctico OK.\n"
@@ -362,11 +372,24 @@ if run_now or (auto_compile and st.session_state.code.strip()):
                             try:
                                 symbol_table = sem.get("symbols")
                                 codegen = CodeGeneratorVisitor(symbol_table)
-                                codegen.visit(res.tree)
-                                st.session_state.quadruples = codegen.quads
-                                st.session_state.console += f"✅ Código intermedio generado: {len(codegen.quads)} cuádruplos.\n"
+                                quads = codegen.generate(res.tree)
+                                st.session_state.quadruples = quads
+                                st.session_state.console += f"✅ Código intermedio generado: {len(quads)} cuádruplos.\n"
+                                
+                                if HAS_MIPS:
+                                    try:
+                                        mips_gen = MIPSGenerator()
+                                        mips_code = mips_gen.generate(quads)
+                                        st.session_state.mips_code = mips_code
+                                        st.session_state.console += "✅ Código MIPS generado exitosamente.\n"
+                                    except Exception as mips_ex:
+                                        st.session_state.console += f"💥 Error en generación MIPS: {mips_ex}\n"
+                                        st.session_state.mips_code = None
+                                        
                             except Exception as ex:
                                 st.session_state.console += f"💥 Error en generación de código: {ex}\n"
+                                import traceback
+                                st.session_state.console += f"{traceback.format_exc()}\n"
                         elif not HAS_CODEGEN:
                             st.session_state.console += "⚠️ El módulo codegen no está disponible.\n"
                             
@@ -387,10 +410,13 @@ st.markdown("## 📊 Resultados")
 res: ParseResult | None = st.session_state.last_result
 sem = st.session_state.get("semantic")
 quads: QuadrupleList | None = st.session_state.get("quadruples")
+mips_code: str | None = st.session_state.get("mips_code")
 
 tab_names = ["Diagnósticos", "Árbol", "Tokens"]
 if HAS_CODEGEN and quads is not None:
     tab_names.append("Código Intermedio")
+if HAS_MIPS and mips_code is not None:
+    tab_names.append("Código MIPS")
 
 tabs = st.tabs(tab_names)
 
@@ -493,7 +519,7 @@ with tabs[2]:
     else:
         st.info("Activa \"Ver tokens\" en Preferencias para listarlos.")
 
-if HAS_CODEGEN and quads is not None and len(tab_names) == 4:
+if HAS_CODEGEN and quads is not None and len(tab_names) >= 4:
     with tabs[3]:
         st.markdown("### Cuádruplos Generados")
         
@@ -558,3 +584,52 @@ if HAS_CODEGEN and quads is not None and len(tab_names) == 4:
             
             if col2.button("📋 Ver como texto", use_container_width=True):
                 st.code(quad_text, language="text")
+
+if HAS_MIPS and mips_code is not None and len(tab_names) == 5:
+    with tabs[4]:
+        st.markdown("### Código MIPS Generado")
+        
+        # Mostrar estadísticas
+        lines = mips_code.split('\n')
+        instructions = [l for l in lines if l.strip() and not l.strip().startswith('#') and not l.strip().startswith('.') and not l.strip().endswith(':')]
+        labels = [l for l in lines if l.strip().endswith(':')]
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Líneas", len(lines))
+        col2.metric("Instrucciones", len(instructions))
+        col3.metric("Etiquetas", len(labels))
+        
+        st.markdown("---")
+        
+        # Mostrar código MIPS con syntax highlighting
+        st.code(mips_code, language="asm")
+        
+        # Botones de descarga y ejecución
+        col1, col2, col3 = st.columns(3)
+        col1.download_button(
+            "💾 Descargar MIPS (.asm)",
+            data=mips_code.encode("utf-8"),
+            file_name="program.asm",
+            mime="text/plain",
+            use_container_width=True
+        )
+        
+        if col2.button("📋 Copiar al portapapeles", use_container_width=True):
+            st.session_state["mips_copy"] = mips_code
+            st.toast("Código MIPS copiado", icon="📋")
+        
+        with col3:
+            st.markdown(
+                """
+                <a href="https://www.cs.cornell.edu/courses/cs3410/2019sp/schedule/mars.jar" 
+                   target="_blank" style="text-decoration:none">
+                    <button style="width:100%;padding:0.5rem;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer">
+                        🚀 Abrir MARS
+                    </button>
+                </a>
+                """,
+                unsafe_allow_html=True
+            )
+        
+        st.markdown("---")
+        st.info("💡 **Tip:** Descarga el archivo .asm y ábrelo en MARS (MIPS Assembler and Runtime Simulator) para ejecutarlo.")
