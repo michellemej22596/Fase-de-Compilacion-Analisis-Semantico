@@ -402,12 +402,29 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
     def visitLeftHandSide(self, ctx: CompiscriptParser.LeftHandSideContext) -> str:
         """
         Genera código para expresiones del lado izquierdo (llamadas, índices, propiedades).
-        TODO: Implementar en fase posterior.
+        Ahora incluye soporte para llamadas a funciones.
         """
-        # Por ahora, solo soportamos identificadores simples
-        if hasattr(ctx, 'primaryAtom'):
-            return self.visit(ctx.primaryAtom())
-        return None
+        # Obtener el átomo primario (identificador, this, new, etc.)
+        base_value = self.visit(ctx.primaryAtom())
+        
+        # Procesar cada operación de sufijo (llamadas, índices, propiedades)
+        current_value = base_value
+        
+        for suffix_op in ctx.suffixOp() or []:
+            # Determinar el tipo de operación de sufijo
+            first_token = suffix_op.getChild(0).getText()
+            
+            if first_token == '(':
+                # Llamada a función
+                current_value = self._generate_function_call(suffix_op, current_value)
+            elif first_token == '[':
+                # Acceso a array (TODO: implementar en fase posterior)
+                pass
+            elif first_token == '.':
+                # Acceso a propiedad (TODO: implementar en fase posterior)
+                pass
+        
+        return current_value
 
     def visitArrayLiteral(self, ctx: CompiscriptParser.ArrayLiteralContext) -> str:
         """
@@ -778,10 +795,128 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
     def visitReturnStatement(self, ctx: CompiscriptParser.ReturnStatementContext):
         """
         Genera código para sentencias de retorno.
-        TODO: Implementar en fase posterior.
+        
+        Estructura:
+            return expression;
+        o
+            return;
+        
+        Cuádruplos generados:
+            evaluar expression -> temp (si existe)
+            RETURN temp (o RETURN None si no hay expresión)
         """
-        # Placeholder
+        if ctx.expression():
+            # Evaluar la expresión de retorno
+            value = self.visit(ctx.expression())
+            self.quads.emit(QuadOp.RETURN, value, None, None)
+        else:
+            # Return sin valor (void)
+            self.quads.emit(QuadOp.RETURN, None, None, None)
+        
         return None
+
+    def visitFunctionDeclaration(self, ctx: CompiscriptParser.FunctionDeclarationContext):
+        """
+        Genera código para declaraciones de funciones.
+        
+        Estructura:
+            fun nombre(param1: tipo1, param2: tipo2): tipo_retorno {
+                // body
+            }
+        
+        Cuádruplos generados:
+            BEGIN_FUNC nombre num_params
+            código del body
+            END_FUNC nombre
+        """
+        # Obtener el nombre de la función
+        func_name = ctx.Identifier().getText()
+        
+        num_params = 0
+        if ctx.parameters():
+            param_list = ctx.parameters().parameter()
+            if param_list:
+                num_params = len(param_list)
+        
+        # Try to get function symbol for additional info
+        func_symbol = None
+        if hasattr(self.symtab, 'resolve'):
+            func_symbol = self.symtab.resolve(func_name)
+        
+        # Guardar el contexto de función actual
+        prev_function = self._current_function
+        if func_symbol and isinstance(func_symbol, FunctionSymbol):
+            self._current_function = func_symbol
+        
+        # Generar etiqueta de inicio de función
+        func_label = self.label_manager.new_label(f"FUNC_{func_name}")
+        
+        # Emitir BEGIN_FUNC con el nombre y número de parámetros
+        self.quads.emit(QuadOp.LABEL, func_label, None, None)
+        self.quads.emit(QuadOp.BEGIN_FUNC, func_name, num_params, None)
+        
+        # Crear nuevo scope de temporales para la función
+        self.temp_manager.push_scope()
+        
+        # Generar código del cuerpo de la función
+        self.visit(ctx.block())
+        
+        # Si la función es void y no tiene return explícito, agregar return implícito
+        is_void = func_symbol and hasattr(func_symbol, 'type') and func_symbol.type == "void"
+        if is_void or not func_symbol:
+            # Verificar si el último cuádruplo es un RETURN
+            if len(self.quads) == 0 or self.quads[-1].op != QuadOp.RETURN:
+                self.quads.emit(QuadOp.RETURN, None, None, None)
+        
+        # Emitir END_FUNC
+        self.quads.emit(QuadOp.END_FUNC, func_name, None, None)
+        
+        # Restaurar scope de temporales
+        self.temp_manager.pop_scope()
+        
+        # Restaurar contexto de función
+        self._current_function = prev_function
+        
+        return None
+
+    def _generate_function_call(self, suffix_ctx, func_name: str) -> str:
+        """
+        Genera código para una llamada a función.
+        
+        Estructura:
+            func(arg1, arg2, arg3)
+        
+        Cuádruplos generados:
+            evaluar arg1 -> temp1
+            PARAM temp1
+            evaluar arg2 -> temp2
+            PARAM temp2
+            evaluar arg3 -> temp3
+            PARAM temp3
+            CALL func num_args result_temp
+        """
+        # Obtener los argumentos de la llamada
+        args = []
+        if suffix_ctx.arguments():
+            arg_exprs = suffix_ctx.arguments().expression()
+            if arg_exprs:
+                for arg_expr in arg_exprs:
+                    # Evaluar cada argumento
+                    arg_value = self.visit(arg_expr)
+                    args.append(arg_value)
+        
+        # Emitir cuádruplos PARAM para cada argumento
+        for arg in args:
+            self.quads.emit(QuadOp.PARAM, arg, None, None)
+        
+        # Generar temporal para el resultado
+        result = self.temp_manager.new_temp()
+        
+        # Emitir cuádruplo CALL
+        num_args = len(args)
+        self.quads.emit(QuadOp.CALL, func_name, num_args, result)
+        
+        return result
 
 
 def generate_code(tree, symbol_table: SymbolTable) -> QuadrupleList:
