@@ -396,43 +396,131 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         
         return var_name
 
-    # ==================== EXPRESIONES NO IMPLEMENTADAS AÚN ====================
-    # Estas se implementarán en fases posteriores
-
     def visitLeftHandSide(self, ctx: CompiscriptParser.LeftHandSideContext) -> str:
         """
         Genera código para expresiones del lado izquierdo (llamadas, índices, propiedades).
-        Ahora incluye soporte para llamadas a funciones.
+        Soporta: llamadas a función, acceso a arrays y acceso a propiedades.
+        Es tolerante a variantes de gramática (IndexExprContext sin .arguments()).
         """
-        # Obtener el átomo primario (identificador, this, new, etc.)
-        base_value = self.visit(ctx.primaryAtom())
-        
-        # Procesar cada operación de sufijo (llamadas, índices, propiedades)
-        current_value = base_value
-        
-        for suffix_op in ctx.suffixOp() or []:
-            # Determinar el tipo de operación de sufijo
+        # 1) Base: identificador, this, new, literal entre paréntesis, etc.
+        current_value = self.visit(ctx.primaryAtom())
+
+        # 2) Sufijos encadenados: (), [], .campo
+        for suffix_op in (ctx.suffixOp() or []):
             first_token = suffix_op.getChild(0).getText()
-            
+
             if first_token == '(':
-                # Llamada a función
+                # Llamada: f(args...) o valorRetornado(args...)
                 current_value = self._generate_function_call(suffix_op, current_value)
+
             elif first_token == '[':
-                # Acceso a array (TODO: implementar en fase posterior)
-                pass
+                # ------- Acceso a array: base[ index ] -------
+                # La gramática puede exponer el índice de varias formas:
+                #   a) suffix_op.expression()                         (IndexExprContext)
+                #   b) suffix_op.indexExpr().expression()             (algunas variantes)
+                #   c) suffix_op.arguments().expression()             (estilo "args")
+                #   d) fallback: child 1 (entre '[' y ']')
+                index_ctx = None
+
+                # a) IndexExprContext típico
+                if hasattr(suffix_op, "expression") and suffix_op.expression():
+                    ex = suffix_op.expression()
+                    index_ctx = ex[0] if isinstance(ex, list) else ex
+
+                # b) Algunas gramáticas anidan indexExpr()
+                elif hasattr(suffix_op, "indexExpr") and suffix_op.indexExpr():
+                    ie = suffix_op.indexExpr()
+                    if hasattr(ie, "expression") and ie.expression():
+                        ex = ie.expression()
+                        index_ctx = ex[0] if isinstance(ex, list) else ex
+
+                # c) Variante "arguments()"
+                elif hasattr(suffix_op, "arguments") and suffix_op.arguments() \
+                    and hasattr(suffix_op.arguments(), "expression"):
+                    ex = suffix_op.arguments().expression()
+                    index_ctx = ex[0] if isinstance(ex, list) else ex
+
+                # d) Fallback ultra defensivo
+                if index_ctx is None:
+                    index_ctx = suffix_op.getChild(1)
+
+                index_val = self.visit(index_ctx)
+                tmp = self.temp_manager.new_temp()
+                self.quads.emit(QuadOp.ARRAY_LOAD, current_value, index_val, tmp)
+                current_value = tmp
+
             elif first_token == '.':
-                # Acceso a propiedad (TODO: implementar en fase posterior)
-                pass
-        
+                # ------- Acceso a propiedad: base.field -------
+                # Puede venir como Identifier() o propertyName()
+                if hasattr(suffix_op, "Identifier") and suffix_op.Identifier():
+                    field_name = suffix_op.Identifier().getText()
+                elif hasattr(suffix_op, "propertyName") and suffix_op.propertyName():
+                    pn = suffix_op.propertyName()
+                    field_name = pn.getText() if hasattr(pn, "getText") else str(pn)
+                else:
+                    # Fallback: token a la derecha del '.'
+                    field_name = suffix_op.getChild(1).getText()
+
+                tmp = self.temp_manager.new_temp()
+                self.quads.emit(QuadOp.GET_FIELD, current_value, field_name, tmp)
+                current_value = tmp
+
         return current_value
+
 
     def visitArrayLiteral(self, ctx: CompiscriptParser.ArrayLiteralContext) -> str:
         """
-        Genera código para literales de array.
-        TODO: Implementar en fase posterior.
+        Construye un arreglo a partir de [expr, expr, ...].
+        Emite:
+        ARRAY_NEW  n        -> arr_tmp
+        ARRAY_STORE arr i v -> (por cada elemento)
+        Retorna el temporal con el arreglo.
         """
-        # Placeholder
-        return None
+        # 1) Intentamos obtener las expresiones con los nombres más comunes
+        expr_nodes = []
+
+        # a) ctx.expression()  (lo más habitual)
+        if hasattr(ctx, "expression") and callable(getattr(ctx, "expression")):
+            ex = ctx.expression()
+            if isinstance(ex, list):
+                expr_nodes = ex
+            elif ex:
+                expr_nodes = [ex]
+
+        # b) ctx.arguments().expression()  (algunas gramáticas)
+        if not expr_nodes and hasattr(ctx, "arguments") and callable(getattr(ctx, "arguments")):
+            args = ctx.arguments()
+            if args and hasattr(args, "expression") and callable(getattr(args, "expression")):
+                ex = args.expression()
+                if isinstance(ex, list):
+                    expr_nodes = ex
+                elif ex:
+                    expr_nodes = [ex]
+
+        # c) Fallback: recolectar hijos que parezcan expresiones
+        if not expr_nodes and hasattr(ctx, "getChildCount"):
+            try:
+                for i in range(ctx.getChildCount()):
+                    ch = ctx.getChild(i)
+                    # Heurística: si el hijo tiene .accept y su nombre de clase contiene 'Expr'
+                    if hasattr(ch, "accept"):
+                        clsname = type(ch).__name__.lower()
+                        if "expr" in clsname:
+                            expr_nodes.append(ch)
+            except Exception:
+                pass
+
+        # 2) Evaluar cada elemento
+        values = [self.visit(n) for n in expr_nodes] if expr_nodes else []
+
+        # 3) Crear y llenar el arreglo (aunque sea vacío)
+        arr_tmp = self.temp_manager.new_temp()
+        self.quads.emit(QuadOp.ARRAY_NEW, str(len(values)), None, arr_tmp)
+        for i, val in enumerate(values):
+            self.quads.emit(QuadOp.ARRAY_STORE, arr_tmp, i, val)
+
+        return arr_tmp
+
 
     # ==================== STATEMENTS ====================
 
@@ -932,3 +1020,190 @@ def generate_code(tree, symbol_table: SymbolTable) -> QuadrupleList:
     """
     generator = CodeGeneratorVisitor(symbol_table)
     return generator.generate(tree)
+
+# ---- Helpers de direccionamiento relativo y utilidades de lectura/escritura ----
+def _addr_of(self, name: str):
+    resolver = getattr(self.symtab, "resolve", None)
+    sym = resolver(name) if callable(resolver) else None
+    if isinstance(sym, VariableSymbol) and hasattr(sym, "offset"):
+        storage = getattr(sym, "storage", "local")
+        if storage in ("local", "param"):
+            return "FP", sym.offset
+        elif storage == "global":
+            return "GP", sym.offset
+    return None, None
+
+def _read_var(self, name: str) -> str:
+    base, off = _addr_of(self, name)
+    if base is not None:
+        t = self.temp_manager.new_temp()
+        self.quads.emit(QuadOp.LOAD, base, off, t)
+        return t
+    return name
+
+def _write_var(self, name: str, value: str):
+    base, off = _addr_of(self, name)
+    if base is not None:
+        self.quads.emit(QuadOp.STORE, value, base, off)
+    else:
+        self.quads.emit(QuadOp.ASSIGN, value, None, name)
+
+# adjuntar helpers a la clase
+CodeGeneratorVisitor._addr_of = _addr_of
+CodeGeneratorVisitor._read_var = _read_var
+CodeGeneratorVisitor._write_var = _write_var
+
+
+# ---- Override no destructivo: IdentifierExpr usa LOAD si aplica ----
+_original_visitIdentifierExpr = CodeGeneratorVisitor.visitIdentifierExpr
+def _visitIdentifierExpr_REL(self, ctx: CompiscriptParser.IdentifierExprContext) -> str:
+    name = _original_visitIdentifierExpr(self, ctx)  # devuelve el nombre
+    # si el original devuelve None por alguna razón, regresa como estaba
+    if not isinstance(name, str):
+        return name
+    return self._read_var(name)
+
+CodeGeneratorVisitor.visitIdentifierExpr = _visitIdentifierExpr_REL
+
+
+# ---- Arrays: literal [ ... ] -> ARRAY_NEW + ARRAY_STORE ----
+_original_visitArrayLiteral = CodeGeneratorVisitor.visitArrayLiteral
+def _visitArrayLiteral_IMPL(self, ctx: CompiscriptParser.ArrayLiteralContext) -> str:
+    # si tu gramática no tiene argumentos, esto cae en el return None original
+    try:
+        values = []
+        if ctx.arguments() and ctx.arguments().expression():
+            for ex in ctx.arguments().expression():
+                values.append(self.visit(ex))
+        res = self.temp_manager.new_temp()
+        self.quads.emit(QuadOp.ARRAY_NEW, len(values), None, res)
+        for i, v in enumerate(values):
+            self.quads.emit(QuadOp.ARRAY_STORE, res, i, v)
+        return res
+    except Exception:
+        # fallback al placeholder original si algo no matchea
+        return _original_visitArrayLiteral(self, ctx)
+
+CodeGeneratorVisitor.visitArrayLiteral = _visitArrayLiteral_IMPL
+
+
+# ---- LeftHandSide robusto: indexación y propiedades (ARRAY_LOAD / GET_FIELD) ----
+def _visitLeftHandSide_EXT(self, ctx: CompiscriptParser.LeftHandSideContext) -> str:
+    current_value = self.visit(ctx.primaryAtom())
+
+    for suffix_op in (ctx.suffixOp() or []):
+        tok0 = suffix_op.getChild(0).getText()
+
+        if tok0 == '(':
+            # llamada: f(args...) o valorRetornado(args...)
+            current_value = self._generate_function_call(suffix_op, current_value)
+
+        elif tok0 == '[':
+            # Acceso a array: base[ index ]
+            index_ctx = None
+
+            # a) IndexExprContext: suffix_op.expression()
+            if hasattr(suffix_op, "expression") and callable(getattr(suffix_op, "expression")):
+                ex = suffix_op.expression()
+                if ex:
+                    index_ctx = ex[0] if isinstance(ex, list) else ex
+
+            # b) Variante con indexExpr(): suffix_op.indexExpr().expression()
+            if index_ctx is None and hasattr(suffix_op, "indexExpr") and callable(getattr(suffix_op, "indexExpr")):
+                ie = suffix_op.indexExpr()
+                if ie and hasattr(ie, "expression") and callable(getattr(ie, "expression")):
+                    ex = ie.expression()
+                    if ex:
+                        index_ctx = ex[0] if isinstance(ex, list) else ex
+
+            # c) Variante "arguments()": suffix_op.arguments().expression()
+            if index_ctx is None and hasattr(suffix_op, "arguments") and callable(getattr(suffix_op, "arguments")):
+                args = suffix_op.arguments()
+                if args and hasattr(args, "expression") and callable(getattr(args, "expression")):
+                    ex = args.expression()
+                    if ex:
+                        index_ctx = ex[0] if isinstance(ex, list) else ex
+
+            # d) Fallback seguro
+            if index_ctx is None:
+                try:
+                    index_ctx = suffix_op.getChild(1)
+                except Exception:
+                    index_ctx = None
+
+            index_val = self.visit(index_ctx)
+            tmp = self.temp_manager.new_temp()
+            self.quads.emit(QuadOp.ARRAY_LOAD, current_value, index_val, tmp)
+            current_value = tmp
+
+        elif tok0 == '.':
+            # Acceso a propiedad: base.field
+            if hasattr(suffix_op, "Identifier") and callable(getattr(suffix_op, "Identifier")) and suffix_op.Identifier():
+                field_name = suffix_op.Identifier().getText()
+            elif hasattr(suffix_op, "propertyName") and callable(getattr(suffix_op, "propertyName")) and suffix_op.propertyName():
+                pn = suffix_op.propertyName()
+                field_name = pn.getText() if hasattr(pn, "getText") else str(pn)
+            else:
+                field_name = suffix_op.getChild(1).getText()
+
+            tmp = self.temp_manager.new_temp()
+            self.quads.emit(QuadOp.GET_FIELD, current_value, field_name, tmp)
+            current_value = tmp
+
+    return current_value
+
+# Enlazar el monkey-patch
+CodeGeneratorVisitor.visitLeftHandSide = _visitLeftHandSide_EXT
+
+
+CodeGeneratorVisitor.visitLeftHandSide = _visitLeftHandSide_EXT
+
+
+# ---- Asignaciones: x=e | a[i]=e | obj.f=e (usa STORE/ARRAY_STORE/SET_FIELD) ----
+_original_visitAssignExpr = CodeGeneratorVisitor.visitAssignExpr
+def _visitAssignExpr_EXT(self, ctx: CompiscriptParser.AssignExprContext) -> str:
+    lhs_ctx = ctx.leftHandSide()
+    rhs = self.visit(ctx.assignmentExpr())
+
+    # identificador simple
+    if hasattr(lhs_ctx, 'Identifier') and lhs_ctx.Identifier() and lhs_ctx.getChildCount() == 1:
+        name = lhs_ctx.Identifier().getText()
+        self._write_var(name, rhs)
+        return name
+
+    # desenrollar base + sufijos
+    base = self.visit(lhs_ctx.primaryAtom())
+    suffixes = list(lhs_ctx.suffixOp() or [])
+    # resolver cadena hasta el penúltimo
+    for s in suffixes[:-1]:
+        tok = s.getChild(0).getText()
+        if tok == '(':
+            base = self._generate_function_call(s, base)
+        elif tok == '[':
+            idx_mid = self.visit(s.arguments().expression(0))
+            tmp_mid = self.temp_manager.new_temp()
+            self.quads.emit(QuadOp.ARRAY_LOAD, base, idx_mid, tmp_mid)
+            base = tmp_mid
+        elif tok == '.':
+            fld_mid = s.Identifier().getText()
+            tmp_mid = self.temp_manager.new_temp()
+            self.quads.emit(QuadOp.GET_FIELD, base, fld_mid, tmp_mid)
+            base = tmp_mid
+
+    # aplicar el último selector como lugar asignable
+    if suffixes:
+        last = suffixes[-1]
+        tok = last.getChild(0).getText()
+        if tok == '[':
+            idx = self.visit(last.arguments().expression(0))
+            self.quads.emit(QuadOp.ARRAY_STORE, base, idx, rhs)
+        elif tok == '.':
+            fld = last.Identifier().getText()
+            self.quads.emit(QuadOp.SET_FIELD, base, fld, rhs)
+    else:
+        # fallback al comportamiento anterior si no hay sufijos
+        return _original_visitAssignExpr(self, ctx)
+
+    return None
+
+CodeGeneratorVisitor.visitAssignExpr = _visitAssignExpr_EXT
