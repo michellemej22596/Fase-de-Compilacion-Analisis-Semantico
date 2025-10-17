@@ -73,6 +73,18 @@ class QuadOp(str, Enum):
     PRINT = "PRINT"
     READ = "READ"
 
+    # --- Excepciones (try/catch) ---
+    TRY = "TRY"            # (TRY, label_catch, None, None)
+    END_TRY = "END_TRY"    # (END_TRY, None, None, None)
+    CATCH = "CATCH"        # (CATCH, exception_var?, None, None)  -> generalmente como LABEL
+    END_CATCH = "END_CATCH"
+    THROW = "THROW"        # (THROW, value, None, None)
+
+    # --- Direccionamiento relativo (stack frame) ---
+    LOAD = "LOAD"          # (LOAD, base, offset, result)       -> result = *(base+offset)
+    STORE = "STORE"        # (STORE, value, base, offset)       -> *(base+offset) = value
+    ADDR = "ADDR"          # (ADDR, symbol, None, result)       -> result = &symbol (opcional)
+
 
 @dataclass
 class Quadruple:
@@ -210,7 +222,7 @@ class QuadrupleList:
         for i, quad in enumerate(self._quads):
             table.append({
                 "index": i,
-                "op": quad.op,
+                "op": quad.op.value,
                 "arg1": quad.arg1 if quad.arg1 is not None else "",
                 "arg2": quad.arg2 if quad.arg2 is not None else "",
                 "result": quad.result if quad.result is not None else "",
