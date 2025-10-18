@@ -1,9 +1,22 @@
-// RUBRO 11: Try y catch (5%)
-// ❌ NO IMPLEMENTADO
+// Test 1: Try-catch básico
+function testBasic(): void {
+    try {
+        let x: integer = 10;
+        print(x);
+    } catch (e) {
+        print("Error:");
+        print(e);
+    }
+}
 
-// Sintaxis esperada (no funcional):
-// try {
-//     let x: integer = 10 / 0;
-// } catch (e) {
-//     print("Error");
-// }
+// Test 2: Try-catch con división por cero
+function testDivision(): integer {
+    try {
+        let a: integer = 10;
+        let b: integer = 0;
+        return a / b;
+    } catch (error) {
+        print(error);
+        return -1;
+    }
+}

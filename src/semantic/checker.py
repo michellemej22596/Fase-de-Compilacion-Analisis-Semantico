@@ -395,6 +395,49 @@ class CompiscriptSemanticVisitor(CompiscriptVisitor):
         self._current_class = prev_cls
         return None
 
+    def visitTryCatchStatement(self, ctx: CompiscriptParser.TryCatchStatementContext):
+        """
+        Genera análisis semántico para try-catch.
+        
+        Estructura:
+            try {
+                // try_block
+            } catch (exception_var) {
+                // catch_block
+            }
+        """
+        # Visitar el bloque try
+        self.symtab.push("BLOCK")
+        terminated = False
+        for st in (ctx.block(0).statement() or []):
+            if terminated:
+                self.error("E500", "Código inalcanzable después de return/break/continue", st)
+                continue
+            res = st.accept(self)
+            if res is TERMINATED:
+                terminated = True
+        self.symtab.pop()
+        
+        # Visitar el bloque catch
+        exception_var = ctx.Identifier().getText()
+        self.symtab.push("BLOCK")
+        
+        # Definir la variable de excepción con tipo string
+        self.define_var(exception_var, STR, ctx)
+        
+        terminated = False
+        for st in (ctx.block(1).statement() or []):
+            if terminated:
+                self.error("E500", "Código inalcanzable después de return/break/continue", st)
+                continue
+            res = st.accept(self)
+            if res is TERMINATED:
+                terminated = True
+        
+        self.symtab.pop()
+        
+        return None
+
     # -------------------- expresiones / chaining --------------------
 
     def visitPrimaryExpr(self, ctx: CompiscriptParser.PrimaryExprContext):

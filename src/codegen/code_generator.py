@@ -903,6 +903,64 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         
         return None
 
+    def visitTryCatchStatement(self, ctx: CompiscriptParser.TryCatchStatementContext):
+        """
+        Genera código para sentencias try-catch.
+        
+        Estructura:
+            try {
+                // try_block
+            } catch (exception_var) {
+                // catch_block
+            }
+        
+        Cuádruplos generados:
+            TRY label_catch
+            código del try_block
+            END_TRY
+            GOTO label_end
+            LABEL label_catch
+            CATCH exception_var
+            código del catch_block
+            END_CATCH
+            LABEL label_end
+        """
+        # Generar etiquetas
+        label_catch = self.label_manager.new_label("CATCH")
+        label_end = self.label_manager.new_label("TRY_END")
+        
+        # Emitir TRY con la etiqueta del manejador
+        self.quads.emit(QuadOp.TRY, label_catch, None, None)
+        
+        # Generar código del bloque try
+        self.visit(ctx.block(0))
+        
+        # Emitir END_TRY
+        self.quads.emit(QuadOp.END_TRY, None, None, None)
+        
+        # Saltar al final si no hay excepción
+        self.quads.emit(QuadOp.GOTO, label_end, None, None)
+        
+        # Etiqueta del manejador de excepciones
+        self.quads.emit(QuadOp.LABEL, label_catch, None, None)
+        
+        # Obtener el nombre de la variable de excepción
+        exception_var = ctx.Identifier().getText()
+        
+        # Emitir CATCH con la variable de excepción
+        self.quads.emit(QuadOp.CATCH, exception_var, None, None)
+        
+        # Generar código del bloque catch
+        self.visit(ctx.block(1))
+        
+        # Emitir END_CATCH
+        self.quads.emit(QuadOp.END_CATCH, None, None, None)
+        
+        # Etiqueta de salida
+        self.quads.emit(QuadOp.LABEL, label_end, None, None)
+        
+        return None
+
     def visitFunctionDeclaration(self, ctx: CompiscriptParser.FunctionDeclarationContext):
         """
         Genera código para declaraciones de funciones.
