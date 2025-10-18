@@ -103,22 +103,6 @@ _DEF_CSS = """
 
 
 
-def paint_header() -> None:
-    st.markdown(
-        f"""
-        <div style="display:flex;align-items:center;gap:.75rem;background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:.6rem 1rem;">
-          <div style="font-size:1.25rem">🧪</div>
-          <div>
-            <div style="color:#2563eb;font-weight:600;letter-spacing:.3px">Compiscript IDE</div>
-            <div style="color:#5a6270;font-size:.85rem">Refactor limpio • v1.0.0</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-
 # ------------------ Utilidades núcleo ------------------
 @st.cache_data(show_spinner=False)
 def discover_samples() -> dict[str, str]:
@@ -246,8 +230,26 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Ocultar barra superior nativa de Streamlit (menu/deploy) y ajustar padding
+st.markdown("""
+<style>
+/* Header/toolbar nativos */
+[data-testid="stHeader"] { display: none; }
+[data-testid="stToolbar"] { display: none; }
+
+/* Menú hamburguesa y footer antiguos (por compatibilidad) */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+
+/* Quitar el espacio que deja el header */
+.block-container { padding-top: 1rem !important; }
+
+/* Ajuste opcional del sidebar para que no quede hueco arriba */
+section[data-testid="stSidebar"] > div:first-child { padding-top: .5rem !important; }
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown(_DEF_CSS, unsafe_allow_html=True)
-paint_header()
 
 # Inicializa session_state de forma compacta
 st.session_state.setdefault("code", DEFAULT_SNIPPET)
