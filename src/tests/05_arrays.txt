@@ -1,6 +1,7 @@
-// RUBRO 5: Arreglos (5%)
-// ❌ NO IMPLEMENTADO
+function main() {
+  // Crear un arreglo con 3 elementos
+  var arr = [10, 20, 30];
 
-// Sintaxis esperada (no funcional):
-// let numeros: integer[] = [1, 2, 3];
-// let primero: integer = numeros[0];
+  // Acceder a un elemento
+  print(arr[1]);   // imprime 20
+}
