@@ -1,0 +1,5 @@
+// RUBRO 1: Diseño del código intermedio (20%)
+// Verificar: Estructura de cuádruplos con 4 componentes
+
+let x: integer = 5;
+let y: integer = x + 3;

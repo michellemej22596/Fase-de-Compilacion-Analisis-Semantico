@@ -1,0 +1,11 @@
+// RUBRO 6: Sentencias de control (15%)
+
+let x: integer = 10;
+
+if (x > 5) {
+    print(x);
+}
+
+while (x > 0) {
+    x = x - 1;
+}

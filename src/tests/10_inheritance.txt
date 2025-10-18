@@ -1,0 +1,7 @@
+// RUBRO 10: Herencia (5%)
+// ❌ NO IMPLEMENTADO
+
+// Sintaxis esperada (no funcional):
+// class Estudiante extends Persona {
+//     carrera: string;
+// }

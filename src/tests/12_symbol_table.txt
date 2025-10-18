@@ -1,0 +1,10 @@
+// RUBRO 12: Tabla de símbolos - posiciones de memoria (10%)
+// Verificar: Offsets únicos y relativos en la tabla de símbolos
+
+function prueba(param: integer): integer {
+    let local1: integer = 5;
+    let local2: integer = 10;
+    return param + local1 + local2;
+}
+
+let global: integer = prueba(3);

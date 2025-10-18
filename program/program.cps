@@ -1,4 +1,4 @@
-const x: integer = 1;
+let x: integer = 1;
 function main() {
   print(1);
 }

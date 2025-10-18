@@ -1,0 +1,9 @@
+// RUBRO 11: Try y catch (5%)
+// ❌ NO IMPLEMENTADO
+
+// Sintaxis esperada (no funcional):
+// try {
+//     let x: integer = 10 / 0;
+// } catch (e) {
+//     print("Error");
+// }

@@ -29,12 +29,18 @@ Cada cuádruplo tiene la siguiente estructura:
 ### Ejemplo Visual
 
 \`\`\`
+
 Código Fuente:     x = a + b * c;
 
+
 Cuádruplos:
+
 (0)  (MUL,  b,    c,    t0)
+
 (1)  (ADD,  a,    t0,   t1)
+
 (2)  (ASSIGN, t1, None, x)
+
 \`\`\`
 
 ## 🔧 Operadores Soportados
@@ -451,19 +457,31 @@ class TempManager:
 
 ### Ejemplo de Reciclaje
 
-\`\`\`javascript
+\`\`\`
+
 // Código Fuente
+
 let a = x + y;
+
 let b = z * w;
+
 let c = a + b;
 
+
 // Cuádruplos (con reciclaje)
+
 (0)  (ADD,    x,  y,    t0)    // t0 asignado
+
 (1)  (ASSIGN, t0, None, a)
+
 (2)  (MUL,    z,  w,    t0)    // t0 reciclado (ya no se usa en línea 1)
+
 (3)  (ASSIGN, t0, None, b)
+
 (4)  (ADD,    a,  b,    t0)    // t0 reciclado nuevamente
+
 (5)  (ASSIGN, t0, None, c)
+
 \`\`\`
 
 ## Supuestos y Limitaciones

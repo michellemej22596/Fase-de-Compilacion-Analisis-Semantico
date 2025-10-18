@@ -1,0 +1,6 @@
+// RUBRO 5: Arreglos (5%)
+// ❌ NO IMPLEMENTADO
+
+// Sintaxis esperada (no funcional):
+// let numeros: integer[] = [1, 2, 3];
+// let primero: integer = numeros[0];

@@ -1,0 +1,8 @@
+// RUBRO 9: Clases y objetos (10%)
+// ❌ NO IMPLEMENTADO
+
+// Sintaxis esperada (no funcional):
+// class Persona {
+//     nombre: string;
+//     edad: integer;
+// }

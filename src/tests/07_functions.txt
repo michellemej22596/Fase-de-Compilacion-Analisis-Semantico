@@ -1,0 +1,7 @@
+// RUBRO 7: Funciones y parámetros (10%)
+
+function suma(a: integer, b: integer): integer {
+    return a + b;
+}
+
+let resultado: integer = suma(5, 3);

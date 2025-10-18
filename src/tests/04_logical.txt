@@ -1,0 +1,3 @@
+// RUBRO 4: Expresiones lógicas (5%)
+
+let condicion: boolean = (5 > 3) && (10 < 20);

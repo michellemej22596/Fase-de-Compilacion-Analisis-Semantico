@@ -1,0 +1,4 @@
+// RUBRO 2: Declaración y asignación de variables (5%)
+
+let a: integer = 10;
+a = 20;
