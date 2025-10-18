@@ -65,6 +65,11 @@ class QuadOp(str, Enum):
     GET_FIELD = "GET_FIELD"
     SET_FIELD = "SET_FIELD"
     CALL_METHOD = "CALL_METHOD"
+    BEGIN_CLASS = "BEGIN_CLASS"
+    END_CLASS = "END_CLASS"
+    CLASS_FIELD = "CLASS_FIELD"
+    BEGIN_METHOD = "BEGIN_METHOD"
+    END_METHOD = "END_METHOD"
     
     # Conversión de tipos
     CAST = "CAST"
@@ -131,6 +136,14 @@ class Quadruple:
     def is_function_boundary(self) -> bool:
         """Verifica si el cuádruplo marca inicio/fin de función."""
         return self.op in (QuadOp.BEGIN_FUNC, QuadOp.END_FUNC)
+    
+    def is_class_boundary(self) -> bool:
+        """Verifica si el cuádruplo marca inicio/fin de clase."""
+        return self.op in (QuadOp.BEGIN_CLASS, QuadOp.END_CLASS)
+    
+    def is_method_boundary(self) -> bool:
+        """Verifica si el cuádruplo marca inicio/fin de método."""
+        return self.op in (QuadOp.BEGIN_METHOD, QuadOp.END_METHOD)
 
 
 class QuadrupleList:

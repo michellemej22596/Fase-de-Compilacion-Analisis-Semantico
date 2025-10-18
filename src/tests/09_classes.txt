@@ -1,8 +1,77 @@
 // RUBRO 9: Clases y objetos (10%)
-// ❌ NO IMPLEMENTADO
+// ✅ IMPLEMENTADO
 
-// Sintaxis esperada (no funcional):
-// class Persona {
-//     nombre: string;
-//     edad: integer;
-// }
+// Definición de clase simple
+class Persona {
+    var nombre: string;
+    var edad: integer;
+}
+
+// Instanciación de objeto
+var p: Persona;
+p = new Persona();
+
+// Asignación de campos
+p.nombre = "Juan";
+p.edad = 25;
+
+// Acceso a campos
+print(p.nombre);
+print(p.edad);
+
+// Clase con métodos
+class Calculadora {
+    var valor: integer;
+    
+    function sumar(x: integer, y: integer): integer {
+        return x + y;
+    }
+    
+    function establecerValor(v: integer): void {
+        valor = v;
+    }
+    
+    function obtenerValor(): integer {
+        return valor;
+    }
+}
+
+// Uso de métodos
+var calc: Calculadora;
+calc = new Calculadora();
+calc.establecerValor(10);
+var resultado: integer;
+resultado = calc.sumar(5, 3);
+print(resultado);
+print(calc.obtenerValor());
+
+// Clase con constructor implícito
+class Punto {
+    var x: integer;
+    var y: integer;
+}
+
+var punto: Punto;
+punto = new Punto();
+punto.x = 10;
+punto.y = 20;
+
+// Uso de 'this' en métodos
+class Contador {
+    var cuenta: integer;
+    
+    function incrementar(): void {
+        this.cuenta = this.cuenta + 1;
+    }
+    
+    function obtenerCuenta(): integer {
+        return this.cuenta;
+    }
+}
+
+var cont: Contador;
+cont = new Contador();
+cont.cuenta = 0;
+cont.incrementar();
+cont.incrementar();
+print(cont.obtenerCuenta());

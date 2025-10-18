@@ -339,9 +339,9 @@ col1, col2, col3, _ = st.columns([1, 1, 1, 5])
 run_now = col1.button("▶️ Analizar", use_container_width=True)
 if col2.button("🧹 Limpiar salida", use_container_width=True):
     st.session_state.console = ""
-col3.download_button(
-    "💾 Guardar", data=st.session_state.code.encode("utf-8"), file_name="program.cps", mime="text/plain", use_container_width=True
-)
+#col3.download_button(
+#    "💾 Guardar", data=st.session_state.code.encode("utf-8"), file_name="program.cps", mime="text/plain", use_container_width=True
+#)
 
 # Dispara compilación si hubo click o forzado por carga/ejemplo
 run_now = run_now or st.session_state.pop("_force_compile", False)
