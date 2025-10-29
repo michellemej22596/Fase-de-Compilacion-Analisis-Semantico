@@ -380,7 +380,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         # Obtener el lado izquierdo (puede ser un identificador simple o una expresión compleja)
         lhs_ctx = ctx.leftHandSide()
         
-        # Por ahora, solo soportamos identificadores simples
+        # Por ahora, solo<bos> soportamos identificadores simples
         # TODO: Implementar acceso a propiedades y arrays en fase posterior
         if hasattr(lhs_ctx, 'Identifier') and lhs_ctx.Identifier():
             var_name = lhs_ctx.Identifier().getText()
@@ -1066,6 +1066,18 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         if hasattr(self.symtab, 'current') and hasattr(self.symtab.current, 'resolve'):
             class_symbol = self.symtab.current.resolve(class_name)
         
+        parent_symbol = None
+        if parent_name:
+            # Try to resolve parent from current scope
+            if hasattr(self.symtab, 'current') and hasattr(self.symtab.current, 'resolve'):
+                parent_symbol = self.symtab.current.resolve(parent_name)
+            # If not found, try global scope
+            if not parent_symbol and hasattr(self.symtab, 'resolve'):
+                parent_symbol = self.symtab.resolve(parent_name)
+            # Verify it's actually a ClassSymbol
+            if parent_symbol and not isinstance(parent_symbol, ClassSymbol):
+                parent_symbol = None
+        
         # Guardar el contexto de clase actual
         prev_class = self._current_class
         if class_symbol and isinstance(class_symbol, ClassSymbol):
@@ -1074,32 +1086,70 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         # Emitir BEGIN_CLASS
         self.quads.emit(QuadOp.BEGIN_CLASS, class_name, parent_name, None)
         
-        # Procesar miembros de la clase
-        if ctx.classMember():
-            field_offset = 0
+        field_offset = 0
+        all_fields = {}  # {field_name: offset}
+        
+        # First, collect all inherited fields from parent hierarchy
+        if parent_symbol and isinstance(parent_symbol, ClassSymbol):
+            # Build hierarchy from top to bottom
+            class_hierarchy = []
+            current_parent = parent_symbol
+            while current_parent is not None:
+                class_hierarchy.insert(0, current_parent)
+                # Navigate to parent's parent
+                if hasattr(current_parent, 'parent') and current_parent.parent:
+                    # parent might be a string name, need to resolve it
+                    if isinstance(current_parent.parent, str):
+                        parent_name_str = current_parent.parent
+                        next_parent = None
+                        if hasattr(self.symtab, 'current') and hasattr(self.symtab.current, 'resolve'):
+                            next_parent = self.symtab.current.resolve(parent_name_str)
+                        if not next_parent and hasattr(self.symtab, 'resolve'):
+                            next_parent = self.symtab.resolve(parent_name_str)
+                        current_parent = next_parent if isinstance(next_parent, ClassSymbol) else None
+                    else:
+                        current_parent = current_parent.parent if isinstance(current_parent.parent, ClassSymbol) else None
+                else:
+                    current_parent = None
             
+            # Emit inherited fields with correct offsets
+            for ancestor_class in class_hierarchy:
+                if hasattr(ancestor_class, 'fields') and ancestor_class.fields:
+                    for field_name in ancestor_class.fields.keys():
+                        if field_name not in all_fields:
+                            # Emit CLASS_FIELD with current class name and correct offset
+                            self.quads.emit(QuadOp.CLASS_FIELD, f"{class_name}.{field_name}", field_offset, None)
+                            all_fields[field_name] = field_offset
+                            field_offset += 1
+        
+        # Then, process own fields
+        if ctx.classMember():
             for member in ctx.classMember():
                 if member.variableDeclaration():
                     # Campo de instancia
                     var_ctx = member.variableDeclaration()
                     field_name = var_ctx.Identifier().getText()
                     
-                    # Emitir información del campo
-                    self.quads.emit(QuadOp.CLASS_FIELD, field_name, field_offset, None)
-                    field_offset += 1
+                    if field_name not in all_fields:
+                        # Emitir información del campo con offset correcto
+                        self.quads.emit(QuadOp.CLASS_FIELD, f"{class_name}.{field_name}", field_offset, None)
+                        all_fields[field_name] = field_offset
+                        field_offset += 1
                     
                 elif member.constantDeclaration():
                     # Campo constante
                     const_ctx = member.constantDeclaration()
                     field_name = const_ctx.Identifier().getText()
                     
-                    # Emitir información del campo
-                    self.quads.emit(QuadOp.CLASS_FIELD, field_name, field_offset, None)
-                    field_offset += 1
+                    if field_name not in all_fields:
+                        # Emitir información del campo con offset correcto
+                        self.quads.emit(QuadOp.CLASS_FIELD, f"{class_name}.{field_name}", field_offset, None)
+                        all_fields[field_name] = field_offset
+                        field_offset += 1
                     
                 elif member.functionDeclaration():
-                    # Método de la clase
-                    self._generate_method(member.functionDeclaration(), class_name)
+                    # Método de la clase - pass all_fields for constructor generation
+                    self._generate_method(member.functionDeclaration(), class_name, all_fields)
         
         # Emitir END_CLASS
         self.quads.emit(QuadOp.END_CLASS, class_name, None, None)
@@ -1109,62 +1159,59 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         
         return None
 
-    def _generate_method(self, ctx: CompiscriptParser.FunctionDeclarationContext, class_name: str):
+    def _generate_method(self, func_ctx: CompiscriptParser.FunctionDeclarationContext, class_name: str, all_fields: dict = None):
         """
         Genera código para un método de clase.
         
         Args:
-            ctx: Contexto del método
+            func_ctx: Contexto del método (FunctionDeclaration)
             class_name: Nombre de la clase que contiene el método
+            all_fields: Diccionario de todos los campos (heredados + propios) con sus offsets
         """
-        method_name = ctx.Identifier().getText()
-        full_method_name = f"{class_name}.{method_name}"
+        # Obtener el nombre del método
+        method_name = func_ctx.Identifier().getText()
         
         # Contar parámetros
         num_params = 0
-        if ctx.parameters():
-            param_list = ctx.parameters().parameter()
+        param_names = []
+        if func_ctx.parameters():
+            param_list = func_ctx.parameters().parameter()
             if param_list:
                 num_params = len(param_list)
-        
-        # Buscar el símbolo del método
-        method_symbol = None
-        if self._current_class and method_name in self._current_class.methods:
-            method_symbol = self._current_class.methods[method_name]
-        
-        # Guardar contexto de función actual
-        prev_function = self._current_function
-        if method_symbol:
-            self._current_function = method_symbol
+                for param in param_list:
+                    param_names.append(param.Identifier().getText())
         
         # Generar etiqueta de inicio del método
         method_label = self.label_manager.new_label(f"METHOD_{class_name}_{method_name}")
         
-        # Emitir BEGIN_METHOD
+        # Emitir BEGIN_METHOD con el nombre completo y número de parámetros
         self.quads.emit(QuadOp.LABEL, method_label, None, None)
-        self.quads.emit(QuadOp.BEGIN_METHOD, full_method_name, num_params, None)
+        self.quads.emit(QuadOp.BEGIN_METHOD, f"{class_name}.{method_name}", num_params, None)
         
-        # Crear nuevo scope de temporales
+        # Crear nuevo scope de temporales para el método
         self.temp_manager.push_scope()
         
-        # El primer parámetro implícito es 'this'
-        # (no necesitamos emitir código especial, solo tenerlo en cuenta)
+        if method_name.lower().startswith("init") and all_fields:
+            # Generate SET_FIELD for each parameter that matches a field
+            # Parameters are accessed as a0, a1, a2, etc.
+            for i, param_name in enumerate(param_names):
+                # Check if this parameter name matches any field
+                if param_name in all_fields:
+                    # Generate SET_FIELD: this.field = param
+                    self.quads.emit(QuadOp.SET_FIELD, "this", param_name, f"a{i}")
         
         # Generar código del cuerpo del método
-        self.visit(ctx.block())
+        self.visit(func_ctx.block())
         
         # Si el método no tiene return explícito, agregar return implícito
         if len(self.quads) == 0 or self.quads[-1].op != QuadOp.RETURN:
             self.quads.emit(QuadOp.RETURN, None, None, None)
         
         # Emitir END_METHOD
-        self.quads.emit(QuadOp.END_METHOD, full_method_name, None, None)
+        self.quads.emit(QuadOp.END_METHOD, f"{class_name}.{method_name}", None, None)
         
         # Restaurar scope de temporales
         self.temp_manager.pop_scope()
-        
-        # Restaurar contexto de función
-        self._current_function = prev_function
 
     def visitNewExpr(self, ctx: CompiscriptParser.NewExprContext) -> str:
         """
@@ -1360,7 +1407,14 @@ def _visitLeftHandSide_EXT(self, ctx: CompiscriptParser.LeftHandSideContext) -> 
                 # Emitir CALL_METHOD
                 num_args = len(args)
                 self.quads.emit(QuadOp.CALL_METHOD, method_object, method_name, result)
-                self.quads.emit(QuadOp.PARAM, num_args, None, None)  # Store num_args for runtime
+                # The number of arguments for CALL_METHOD needs to be passed explicitly
+                # to the runtime, often as a separate parameter or encoded.
+                # For simplicity here, let's assume it's handled by the runtime based on context
+                # or potentially via a temporary parameter.
+                # A common approach is to push the argument count before the call.
+                # For now, let's use the 'PARAM' quad for argument count as a placeholder.
+                # This might need adjustment based on the actual runtime implementation.
+                self.quads.emit(QuadOp.PARAM, num_args, None, None)  
                 
                 current_value = result
                 is_method_call = False
@@ -1433,7 +1487,7 @@ def _visitLeftHandSide_EXT(self, ctx: CompiscriptParser.LeftHandSideContext) -> 
                 method_object = current_value
                 method_name = field_name
                 # Don't generate GET_FIELD yet, wait for the call
-                current_value = field_name  # Placeholder
+                current_value = field_name  # Placeholder, will be replaced by the actual method call result
             else:
                 # Regular field access
                 tmp = self.temp_manager.new_temp()
@@ -1460,73 +1514,68 @@ def _visitAssignExpr_EXT(self, ctx: CompiscriptParser.AssignExprContext) -> str:
         return name
 
     # desenrollar base + sufijos
-    base = self.visit(lhs_ctx.primaryAtom())
+    # The base needs to be evaluated, but we don't generate LOADs until the end.
+    # We need to track the chain of accesses.
+    base = lhs_ctx.primaryAtom()
     suffixes = list(lhs_ctx.suffixOp() or [])
-    # resolver cadena hasta el penúltimo
-    for s in suffixes[:-1]:
-        tok = s.getChild(0).getText()
-        if tok == '(':
-            base = self._generate_function_call(s, base)
-        elif tok == '[':
-            # The index needs to be resolved as part of the base calculation
-            # For array assignment, we need the index expression, not its value yet.
-            # We'll assume 'arguments().expression(0)' for simplicity.
-            index_expr_ctx = None
-            if hasattr(s, "arguments") and callable(getattr(s, "arguments")):
-                args = s.arguments()
-                if args and hasattr(args, "expression") and callable(getattr(args, "expression")):
-                    index_expr_ctx = args.expression()[0]
-            
-            if index_expr_ctx:
-                # For now, we don't generate intermediate LOADs for chains of assignments like a[i].b = x
-                # We just need the base to be updated correctly.
-                # The actual array load will happen during the final assignment step.
-                pass # Placeholder, base will be updated by subsequent operations if any.
-            else:
-                # Error case or unsupported grammar variant
-                pass
 
-        elif tok == '.':
-            fld_mid = None
-            if hasattr(s, "Identifier") and callable(getattr(s, "Identifier")):
-                fld_mid = s.Identifier().getText()
-            elif hasattr(s, "propertyName") and callable(getattr(s, "propertyName")):
-                pn = s.propertyName()
-                fld_mid = pn.getText() if hasattr(pn, "getText") else str(pn)
-            
-            if fld_mid:
-                # Similar to array indexing, we don't generate intermediate GET_FIELDs here.
-                # The final SET_FIELD will handle the value assignment.
-                pass # Placeholder
-            else:
-                # Error case or unsupported grammar variant
-                pass
-
-
-    # aplicar el último selector como lugar asignable
-    if suffixes:
-        last = suffixes[-1]
-        tok = last.getChild(0).getText()
-        if tok == '[':
-            idx = self.visit(last.arguments().expression(0))
-            self.quads.emit(QuadOp.ARRAY_STORE, base, idx, rhs)
-        elif tok == '.':
-            fld = None
-            if hasattr(last, "Identifier") and callable(getattr(last, "Identifier")):
-                fld = last.Identifier().getText()
-            elif hasattr(last, "propertyName") and callable(getattr(last, "propertyName")):
-                pn = last.propertyName()
-                fld = pn.getText() if hasattr(pn, "getText") else str(pn)
-            
-            if fld:
-                self.quads.emit(QuadOp.SET_FIELD, base, fld, rhs)
-            else:
-                # Error case or unsupported grammar variant
-                pass
-    else:
-        # fallback al comportamiento anterior si no hay sufijos
+    # If there are no suffixes, it's a simple assignment already handled above.
+    if not suffixes:
         return _original_visitAssignExpr(self, ctx)
 
-    return None
+    # Generate quads for the final assignment operation.
+    if suffixes[-1].getChild(0).getText() == '[':
+        # Array assignment: base[index] = rhs
+        # Re-evaluate the context for the base of the array access
+        array_ref = self.visit(base)
+        
+        # Resolve the index expression
+        index_ctx = None
+        last_suffix = suffixes[-1]
+        # This needs to be more robust to match the logic in visitLeftHandSide
+        if hasattr(last_suffix, "arguments") and callable(getattr(last_suffix, "arguments")):
+            args = last_suffix.arguments()
+            if args and hasattr(args, "expression") and callable(getattr(args, "expression")):
+                ex = args.expression()
+                if ex:
+                    index_ctx = ex[0] if isinstance(ex, list) else ex
+        elif hasattr(last_suffix, "expression") and callable(getattr(last_suffix, "expression")):
+             ex = last_suffix.expression()
+             if ex:
+                 index_ctx = ex[0] if isinstance(ex, list) else ex
+
+        if index_ctx:
+            index_val = self.visit(index_ctx)
+            self.quads.emit(QuadOp.ARRAY_STORE, array_ref, index_val, rhs)
+        else:
+            # Error handling for missing index
+            pass
+
+    elif suffixes[-1].getChild(0).getText() == '.':
+        # Field assignment: base.field = rhs
+        # Re-evaluate the context for the base of the field access
+        object_ref = self.visit(base)
+        
+        # Resolve the field name
+        field_name = None
+        last_suffix = suffixes[-1]
+        if hasattr(last_suffix, "Identifier") and callable(getattr(last_suffix, "Identifier")):
+            field_name = last_suffix.Identifier().getText()
+        elif hasattr(last_suffix, "propertyName") and callable(getattr(last_suffix, "propertyName")):
+            pn = last_suffix.propertyName()
+            field_name = pn.getText() if hasattr(pn, "getText") else str(pn)
+        
+        if field_name:
+            self.quads.emit(QuadOp.SET_FIELD, object_ref, field_name, rhs)
+        else:
+            # Error handling for missing field name
+            pass
+    else:
+        # Fallback for non-assignable LHS or unsupported structures
+        return _original_visitAssignExpr(self, ctx)
+
+    # Return the LHS value for chained assignments like a = b = c, though this might need refinement
+    # For now, we focus on generating the assignment quads.
+    return None # Or potentially the value that was assigned
 
 CodeGeneratorVisitor.visitAssignExpr = _visitAssignExpr_EXT

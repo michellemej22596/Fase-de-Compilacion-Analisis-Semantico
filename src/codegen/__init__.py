@@ -9,7 +9,7 @@ from .quadruple import Quadruple, QuadrupleList
 from .temp_manager import TempManager, ScopedTempManager
 from .label_manager import LabelManager, LoopLabelManager
 from .activation_record import ActivationRecord, ActivationRecordManager
-from .code_generator import CodeGeneratorVisitor, generate_code
+from .code_generator import CodeGeneratorVisitor
 
 __all__ = [
     'Quadruple',
@@ -21,5 +21,4 @@ __all__ = [
     'ActivationRecord',
     'ActivationRecordManager',
     'CodeGeneratorVisitor',
-    'generate_code',
 ]

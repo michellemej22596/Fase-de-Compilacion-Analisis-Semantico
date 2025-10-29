@@ -1,7 +1,97 @@
 // RUBRO 10: Herencia (5%)
-// ❌ NO IMPLEMENTADO
+// Test de herencia en Compiscript
 
-// Sintaxis esperada (no funcional):
-// class Estudiante extends Persona {
-//     carrera: string;
-// }
+// Clase base Animal
+class Animal {
+    var nombre: string;
+    var edad: integer;
+    
+    function init(n: string, e: integer): void {
+        this.nombre = n;
+        this.edad = e;
+    }
+    
+    function hacerSonido(): void {
+        print("El animal hace un sonido");
+    }
+    
+    function mostrarInfo(): void {
+        print("Nombre: ");
+        print(this.nombre);
+        print("Edad: ");
+        print(this.edad);
+    }
+}
+
+// Clase derivada Perro que hereda de Animal
+class Perro : Animal {
+    var raza: string;
+    
+    function initPerro(n: string, e: integer, r: string): void {
+        this.nombre = n;
+        this.edad = e;
+        this.raza = r;
+    }
+    
+    function hacerSonido(): void {
+        print("Guau guau!");
+    }
+    
+    function mostrarRaza(): void {
+        print("Raza: ");
+        print(this.raza);
+    }
+}
+
+// Clase derivada Gato que hereda de Animal
+class Gato : Animal {
+    var color: string;
+    
+    function initGato(n: string, e: integer, c: string): void {
+        this.nombre = n;
+        this.edad = e;
+        this.color = c;
+    }
+    
+    function hacerSonido(): void {
+        print("Miau miau!");
+    }
+    
+    function mostrarColor(): void {
+        print("Color: ");
+        print(this.color);
+    }
+}
+
+// Programa principal
+function main(): void {
+    // Crear un perro
+    var miPerro: Perro;
+    miPerro = new Perro();
+    miPerro.initPerro("Firulais", 3, "Labrador");
+    
+    print("=== Información del Perro ===");
+    miPerro.mostrarInfo();
+    miPerro.mostrarRaza();
+    miPerro.hacerSonido();
+    
+    // Crear un gato
+    var miGato: Gato;
+    miGato = new Gato();
+    miGato.initGato("Michi", 2, "Naranja");
+    
+    print("=== Información del Gato ===");
+    miGato.mostrarInfo();
+    miGato.mostrarColor();
+    miGato.hacerSonido();
+    
+    // Acceso directo a campos heredados
+    print("=== Acceso directo a campos ===");
+    print("Nombre del perro: ");
+    print(miPerro.nombre);
+    print("Edad del gato: ");
+    print(miGato.edad);
+}
+
+// Ejecutar programa
+main();
