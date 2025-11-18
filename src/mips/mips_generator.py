@@ -363,23 +363,7 @@ class MIPSGenerator:
         self.code.append("li $v0, 4")  # syscall 4 = print_string
         self.code.append("syscall")
 
-    def _translate_begin_func(self, quad: Quadruple):
-        func_name = quad.arg1
-        num_params = quad.arg2 if quad.arg2 else 0
-        
-        self.in_function = True
-        self.code.append(f"# Function: {func_name}")
-        
-        # Función anidada, comenzamos el prólogo de la función
-        self.code.append("# Function prologue")
-        self.code.append("addi $sp, $sp, -8")  # Reservar espacio para $ra y $fp
-        self.code.append("sw $ra, 4($sp)")     # Guardar return address
-        self.code.append("sw $fp, 0($sp)")     # Guardar frame pointer anterior
-        self.code.append("move $fp, $sp")      # Establecer nuevo frame pointer
-        
-        # Reservar espacio para variables locales (puedes ajustarlo según el número de variables)
-        self.code.append("addi $sp, $sp, -32")  # Por ejemplo, 32 bytes para variables locales
-
+  
     def _translate_end_func(self, quad: Quadruple):
         """
         Traduce END_FUNC: fin de función.
@@ -445,27 +429,32 @@ class MIPSGenerator:
         
         self.param_count += 1
     
+    def _translate_begin_func(self, quad: Quadruple):
+        """Traduce BEGIN_FUNC: inicio de función"""
+        func_name = quad.arg1
+        self.in_function = True
+        self.code.append(f"# Function: {func_name}")
+        # Se asegura de que la etiqueta de la función sea única
+        self.code.append(f"{func_name}:")  
+        self.code.append("# Function prologue")
+        self.code.append("addi $sp, $sp, -8")
+        self.code.append("sw $ra, 4($sp)")
+        self.code.append("sw $fp, 0($sp)")
+        self.code.append("move $fp, $sp")
+        self.code.append("addi $sp, $sp, -32")  # Ajuste de espacio para variables locales
+
     def _translate_call(self, quad: Quadruple):
-        """
-        Traduce CALL: llamada a función.
-        
-        Formato: CALL func_name num_args result
-        """
+        """Traduce CALL: llamada a función"""
         func_name = quad.arg1
         num_args = quad.arg2 if quad.arg2 else 0
         result_var = quad.result
-        
-        # Llamar a la función
-        self.code.append(f"jal {func_name}")
-        
-        # Resetear contador de parámetros
+        # Asegura la correcta llamada a la función
+        self.code.append(f"jal {func_name}")  
         self.param_count = 0
-        
-        # Si hay resultado, guardarlo
         if result_var:
             dest = self._get_or_allocate_register(result_var)
             self.code.append(f"move {dest}, $v0")
-    
+
     def _translate_return(self, quad: Quadruple):
         """
         Traduce RETURN: retornar de función.
