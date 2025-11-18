@@ -1,9 +1,3 @@
-"""
-Generador de código MIPS a partir de cuádruplos.
-
-Traduce código intermedio (cuádruplos) a código assembler MIPS32.
-"""
-
 from typing import List, Dict, Optional
 from codegen.quadruple import Quadruple, QuadOp, QuadrupleList
 from mips.register_manager import RegisterManager
@@ -64,9 +58,16 @@ class MIPSGenerator:
     def _generate_data_section(self):
         """Genera la sección .data con variables globales y strings."""
         self.data_section.append(".data")
-        self.data_section.append("newline: .asciiz \"\\n\"")
-        # Los string literals se agregarán dinámicamente
-    
+        self.data_section.append("newline: .asciiz \"\\n\"")  # Línea nueva predeterminada
+        
+        # Añadir constantes a la sección de datos
+        for var_name, value in self.string_literals.items():
+            self.data_section.append(f"{var_name}: .word {value}")
+        
+        # También incluir las literales de cadenas, si las tienes
+        for label, value in self.string_literals.items():
+            self.data_section.append(f"{label}: .asciiz \"{value}\"")
+
     def _generate_text_section(self, quadruples: QuadrupleList):
         """Genera la sección .text con el código principal."""
         self.code.append(".text")
@@ -154,12 +155,20 @@ class MIPSGenerator:
     
     def _translate_assign(self, quad: Quadruple):
         """Traduce ASSIGN: result = arg1"""
-        # (ASSIGN, valor, None, variable)
-        src = self._load_operand(quad.arg1)
-        dest = self._get_or_allocate_register(quad.result)
-        
-        if src != dest:
-            self.code.append(f"move {dest}, {src}")
+        if quad.arg1.isdigit():  # Verificar si es un valor literal (constante)
+            # Si es una constante, agregarla a la sección de datos
+            const_name = f"const_{self.string_counter}"
+            self.string_literals[const_name] = quad.arg1
+            self.string_counter += 1
+            self.code.append(f"li {quad.result}, {quad.arg1}")  # Cargar constante en el registro
+        else:
+            # Si no es una constante, seguir el procedimiento normal
+            src = self._load_operand(quad.arg1)
+            dest = self._get_or_allocate_register(quad.result)
+            
+            if src != dest:
+                self.code.append(f"move {dest}, {src}")
+
     
     def _translate_add(self, quad: Quadruple):
         """Traduce ADD: result = arg1 + arg2"""
@@ -334,18 +343,26 @@ class MIPSGenerator:
         self.code.append(f"sne {dest}, {dest}, $zero")
     
     def _translate_print(self, quad: Quadruple):
-        """Traduce PRINT: imprime un valor"""
+        """Traduce PRINT: imprime un valor o una cadena."""
         value = self._load_operand(quad.arg1)
         
-        # Imprimir el valor (asumiendo entero)
-        self.code.append(f"move $a0, {value}")
-        self.code.append("li $v0, 1")  # syscall 1 = print_int
-        self.code.append("syscall")
+        if value.startswith('"') and value.endswith('"'):
+            # Es un string literal
+            label = self._add_string_literal(value)
+            self.code.append(f"la $a0, {label}")
+            self.code.append("li $v0, 4")  # syscall 4 = print_string
+            self.code.append("syscall")
+        else:
+            # Si no es un literal de cadena, se trata de un número entero
+            self.code.append(f"move $a0, {value}")
+            self.code.append("li $v0, 1")  # syscall 1 = print_int
+            self.code.append("syscall")
         
         # Imprimir newline
         self.code.append("la $a0, newline")
         self.code.append("li $v0, 4")  # syscall 4 = print_string
         self.code.append("syscall")
+
     
     def _translate_begin_func(self, quad: Quadruple):
         """
