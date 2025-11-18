@@ -363,33 +363,46 @@ class MIPSGenerator:
         self.code.append("li $v0, 4")  # syscall 4 = print_string
         self.code.append("syscall")
 
-    
     def _translate_begin_func(self, quad: Quadruple):
-        """
-        Traduce BEGIN_FUNC: inicio de función.
-        
-        Estructura del stack frame:
-        - Guardar $ra (return address)
-        - Guardar $fp (frame pointer anterior)
-        - Establecer nuevo $fp
-        - Reservar espacio para variables locales
-        """
         func_name = quad.arg1
         num_params = quad.arg2 if quad.arg2 else 0
         
         self.in_function = True
         self.code.append(f"# Function: {func_name}")
         
-        # Prólogo de la función
+        # Función anidada, comenzamos el prólogo de la función
         self.code.append("# Function prologue")
         self.code.append("addi $sp, $sp, -8")  # Reservar espacio para $ra y $fp
         self.code.append("sw $ra, 4($sp)")     # Guardar return address
         self.code.append("sw $fp, 0($sp)")     # Guardar frame pointer anterior
         self.code.append("move $fp, $sp")      # Establecer nuevo frame pointer
         
-        # Reservar espacio para variables locales (estimado: 32 bytes)
-        self.code.append("addi $sp, $sp, -32")
-    
+        # Reservar espacio para variables locales (puedes ajustarlo según el número de variables)
+        self.code.append("addi $sp, $sp, -32")  # Por ejemplo, 32 bytes para variables locales
+
+    def _translate_end_func(self, quad: Quadruple):
+        """
+        Traduce END_FUNC: fin de función.
+        
+        Epílogo de la función:
+        - Restaurar $sp
+        - Restaurar $fp
+        - Restaurar $ra
+        - Retornar
+        """
+        func_name = quad.arg1
+        
+        self.code.append(f"# End function: {func_name}")
+        self.code.append("# Function epilogue")
+        self.code.append("move $sp, $fp")      # Restaurar stack pointer
+        self.code.append("lw $fp, 0($sp)")     # Restaurar frame pointer anterior
+        self.code.append("lw $ra, 4($sp)")     # Restaurar return address
+        self.code.append("addi $sp, $sp, 8")   # Liberar espacio del frame
+        self.code.append("jr $ra")             # Retornar
+        
+        self.in_function = False
+        
+
     def _translate_end_func(self, quad: Quadruple):
         """
         Traduce END_FUNC: fin de función.
@@ -534,3 +547,58 @@ class MIPSGenerator:
         program.extend(self.code)
         
         return "\n".join(program)
+
+    def _translate_foo(self):
+        # Proceso de la función foo, similar al ejemplo anterior, con variables y su cálculo
+        self.code.append("# Generando código para foo")
+        
+        # Reservar espacio para las variables de foo
+        self.code.append("addi $sp, $sp, -16")  # Por ejemplo, espacio para 2 variables locales
+        self.code.append("sw $a0, 0($sp)")      # Guardar el primer parámetro 'a'
+        self.code.append("sw $a1, 4($sp)")      # Guardar el segundo parámetro 'b'
+        
+        # Llamada a bar
+        self.code.append("# Llamada a bar")
+        self.code.append("jal bar")  # Llamar a la función bar
+        
+        # Después de la llamada a bar, guardar el valor de retorno en una variable de foo
+        self.code.append("move $t0, $v0")  # Guardar el valor de retorno de bar
+        self.code.append("addi $sp, $sp, 16")  # Limpiar el espacio de la función foo
+        
+        self.code.append("jr $ra")  # Retornar de foo
+
+    def _translate_bar(self):
+        # Proceso de la función bar
+        self.code.append("# Generando código para bar")
+        
+        # Reservar espacio para las variables de bar
+        self.code.append("addi $sp, $sp, -8")  # Reservar espacio para las variables locales de bar
+        self.code.append("sw $a0, 0($sp)")      # Guardar 'f'
+        self.code.append("sw $a1, 4($sp)")      # Guardar 'g'
+        
+        # Sumar f + g y guardarlo en x
+        self.code.append("lw $t0, 0($sp)")  # Cargar 'f' en $t0
+        self.code.append("lw $t1, 4($sp)")  # Cargar 'g' en $t1
+        self.code.append("add $t2, $t0, $t1")  # x = f + g
+        
+        self.code.append("move $v0, $t2")  # Retornar el valor de x
+        
+        # Limpiar el espacio reservado para bar
+        self.code.append("addi $sp, $sp, 8")
+        self.code.append("jr $ra")  # Retornar de bar
+
+    def _translate_main(self):
+        # Definir las variables globales c y d
+        self.code.append("# Script principal")
+        self.code.append("li $t0, 2")  # c = 2
+        self.code.append("li $t1, 3")  # d = 3
+        self.code.append("move $a0, $t0")  # Argumento c para foo
+        self.code.append("move $a1, $t1")  # Argumento d para foo
+        
+        # Llamada a foo
+        self.code.append("jal foo")
+        
+        # Guardar el resultado de foo en x
+        self.code.append("move $t2, $v0")  # x = valor retornado de foo
+        self.code.append("li $v0, 10")  # Código de salida
+        self.code.append("syscall")
