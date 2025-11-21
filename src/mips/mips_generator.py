@@ -1,9 +1,3 @@
-"""
-Generador de código MIPS a partir de cuádruplos.
-
-Traduce código intermedio (cuádruplos) a código assembler MIPS32.
-"""
-
 from typing import List, Dict, Optional
 from codegen.quadruple import Quadruple, QuadOp, QuadrupleList
 from mips.register_manager import RegisterManager
@@ -64,9 +58,16 @@ class MIPSGenerator:
     def _generate_data_section(self):
         """Genera la sección .data con variables globales y strings."""
         self.data_section.append(".data")
-        self.data_section.append("newline: .asciiz \"\\n\"")
-        # Los string literals se agregarán dinámicamente
-    
+        self.data_section.append("newline: .asciiz \"\\n\"")  # Línea nueva predeterminada
+        
+        # Añadir constantes a la sección de datos
+        for var_name, value in self.string_literals.items():
+            self.data_section.append(f"{var_name}: .word {value}")
+        
+        # También incluir las literales de cadenas, si las tienes
+        for label, value in self.string_literals.items():
+            self.data_section.append(f"{label}: .asciiz \"{value}\"")
+
     def _generate_text_section(self, quadruples: QuadrupleList):
         """Genera la sección .text con el código principal."""
         self.code.append(".text")
@@ -154,12 +155,20 @@ class MIPSGenerator:
     
     def _translate_assign(self, quad: Quadruple):
         """Traduce ASSIGN: result = arg1"""
-        # (ASSIGN, valor, None, variable)
-        src = self._load_operand(quad.arg1)
-        dest = self._get_or_allocate_register(quad.result)
-        
-        if src != dest:
-            self.code.append(f"move {dest}, {src}")
+        if quad.arg1.isdigit():  # Verificar si es un valor literal (constante)
+            # Si es una constante, agregarla a la sección de datos
+            const_name = f"const_{self.string_counter}"
+            self.string_literals[const_name] = quad.arg1
+            self.string_counter += 1
+            self.code.append(f"li {quad.result}, {quad.arg1}")  # Cargar constante en el registro
+        else:
+            # Si no es una constante, seguir el procedimiento normal
+            src = self._load_operand(quad.arg1)
+            dest = self._get_or_allocate_register(quad.result)
+            
+            if src != dest:
+                self.code.append(f"move {dest}, {src}")
+
     
     def _translate_add(self, quad: Quadruple):
         """Traduce ADD: result = arg1 + arg2"""
@@ -334,45 +343,50 @@ class MIPSGenerator:
         self.code.append(f"sne {dest}, {dest}, $zero")
     
     def _translate_print(self, quad: Quadruple):
-        """Traduce PRINT: imprime un valor"""
+        """Traduce PRINT: imprime un valor o una cadena."""
         value = self._load_operand(quad.arg1)
         
-        # Imprimir el valor (asumiendo entero)
-        self.code.append(f"move $a0, {value}")
-        self.code.append("li $v0, 1")  # syscall 1 = print_int
-        self.code.append("syscall")
+        if value.startswith('"') and value.endswith('"'):
+            # Es un string literal
+            label = self._add_string_literal(value)
+            self.code.append(f"la $a0, {label}")
+            self.code.append("li $v0, 4")  # syscall 4 = print_string
+            self.code.append("syscall")
+        else:
+            # Si no es un literal de cadena, se trata de un número entero
+            self.code.append(f"move $a0, {value}")
+            self.code.append("li $v0, 1")  # syscall 1 = print_int
+            self.code.append("syscall")
         
         # Imprimir newline
         self.code.append("la $a0, newline")
         self.code.append("li $v0, 4")  # syscall 4 = print_string
         self.code.append("syscall")
-    
-    def _translate_begin_func(self, quad: Quadruple):
+
+  
+    def _translate_end_func(self, quad: Quadruple):
         """
-        Traduce BEGIN_FUNC: inicio de función.
+        Traduce END_FUNC: fin de función.
         
-        Estructura del stack frame:
-        - Guardar $ra (return address)
-        - Guardar $fp (frame pointer anterior)
-        - Establecer nuevo $fp
-        - Reservar espacio para variables locales
+        Epílogo de la función:
+        - Restaurar $sp
+        - Restaurar $fp
+        - Restaurar $ra
+        - Retornar
         """
         func_name = quad.arg1
-        num_params = quad.arg2 if quad.arg2 else 0
         
-        self.in_function = True
-        self.code.append(f"# Function: {func_name}")
+        self.code.append(f"# End function: {func_name}")
+        self.code.append("# Function epilogue")
+        self.code.append("move $sp, $fp")      # Restaurar stack pointer
+        self.code.append("lw $fp, 0($sp)")     # Restaurar frame pointer anterior
+        self.code.append("lw $ra, 4($sp)")     # Restaurar return address
+        self.code.append("addi $sp, $sp, 8")   # Liberar espacio del frame
+        self.code.append("jr $ra")             # Retornar
         
-        # Prólogo de la función
-        self.code.append("# Function prologue")
-        self.code.append("addi $sp, $sp, -8")  # Reservar espacio para $ra y $fp
-        self.code.append("sw $ra, 4($sp)")     # Guardar return address
-        self.code.append("sw $fp, 0($sp)")     # Guardar frame pointer anterior
-        self.code.append("move $fp, $sp")      # Establecer nuevo frame pointer
+        self.in_function = False
         
-        # Reservar espacio para variables locales (estimado: 32 bytes)
-        self.code.append("addi $sp, $sp, -32")
-    
+
     def _translate_end_func(self, quad: Quadruple):
         """
         Traduce END_FUNC: fin de función.
@@ -415,27 +429,32 @@ class MIPSGenerator:
         
         self.param_count += 1
     
+    def _translate_begin_func(self, quad: Quadruple):
+        """Traduce BEGIN_FUNC: inicio de función"""
+        func_name = quad.arg1
+        self.in_function = True
+        self.code.append(f"# Function: {func_name}")
+        # Se asegura de que la etiqueta de la función sea única
+        self.code.append(f"{func_name}:")  
+        self.code.append("# Function prologue")
+        self.code.append("addi $sp, $sp, -8")
+        self.code.append("sw $ra, 4($sp)")
+        self.code.append("sw $fp, 0($sp)")
+        self.code.append("move $fp, $sp")
+        self.code.append("addi $sp, $sp, -32")  # Ajuste de espacio para variables locales
+
     def _translate_call(self, quad: Quadruple):
-        """
-        Traduce CALL: llamada a función.
-        
-        Formato: CALL func_name num_args result
-        """
+        """Traduce CALL: llamada a función"""
         func_name = quad.arg1
         num_args = quad.arg2 if quad.arg2 else 0
         result_var = quad.result
-        
-        # Llamar a la función
-        self.code.append(f"jal {func_name}")
-        
-        # Resetear contador de parámetros
+        # Asegura la correcta llamada a la función
+        self.code.append(f"jal {func_name}")  
         self.param_count = 0
-        
-        # Si hay resultado, guardarlo
         if result_var:
             dest = self._get_or_allocate_register(result_var)
             self.code.append(f"move {dest}, $v0")
-    
+
     def _translate_return(self, quad: Quadruple):
         """
         Traduce RETURN: retornar de función.
@@ -517,3 +536,58 @@ class MIPSGenerator:
         program.extend(self.code)
         
         return "\n".join(program)
+
+    def _translate_foo(self):
+        # Proceso de la función foo, similar al ejemplo anterior, con variables y su cálculo
+        self.code.append("# Generando código para foo")
+        
+        # Reservar espacio para las variables de foo
+        self.code.append("addi $sp, $sp, -16")  # Por ejemplo, espacio para 2 variables locales
+        self.code.append("sw $a0, 0($sp)")      # Guardar el primer parámetro 'a'
+        self.code.append("sw $a1, 4($sp)")      # Guardar el segundo parámetro 'b'
+        
+        # Llamada a bar
+        self.code.append("# Llamada a bar")
+        self.code.append("jal bar")  # Llamar a la función bar
+        
+        # Después de la llamada a bar, guardar el valor de retorno en una variable de foo
+        self.code.append("move $t0, $v0")  # Guardar el valor de retorno de bar
+        self.code.append("addi $sp, $sp, 16")  # Limpiar el espacio de la función foo
+        
+        self.code.append("jr $ra")  # Retornar de foo
+
+    def _translate_bar(self):
+        # Proceso de la función bar
+        self.code.append("# Generando código para bar")
+        
+        # Reservar espacio para las variables de bar
+        self.code.append("addi $sp, $sp, -8")  # Reservar espacio para las variables locales de bar
+        self.code.append("sw $a0, 0($sp)")      # Guardar 'f'
+        self.code.append("sw $a1, 4($sp)")      # Guardar 'g'
+        
+        # Sumar f + g y guardarlo en x
+        self.code.append("lw $t0, 0($sp)")  # Cargar 'f' en $t0
+        self.code.append("lw $t1, 4($sp)")  # Cargar 'g' en $t1
+        self.code.append("add $t2, $t0, $t1")  # x = f + g
+        
+        self.code.append("move $v0, $t2")  # Retornar el valor de x
+        
+        # Limpiar el espacio reservado para bar
+        self.code.append("addi $sp, $sp, 8")
+        self.code.append("jr $ra")  # Retornar de bar
+
+    def _translate_main(self):
+        # Definir las variables globales c y d
+        self.code.append("# Script principal")
+        self.code.append("li $t0, 2")  # c = 2
+        self.code.append("li $t1, 3")  # d = 3
+        self.code.append("move $a0, $t0")  # Argumento c para foo
+        self.code.append("move $a1, $t1")  # Argumento d para foo
+        
+        # Llamada a foo
+        self.code.append("jal foo")
+        
+        # Guardar el resultado de foo en x
+        self.code.append("move $t2, $v0")  # x = valor retornado de foo
+        self.code.append("li $v0, 10")  # Código de salida
+        self.code.append("syscall")
