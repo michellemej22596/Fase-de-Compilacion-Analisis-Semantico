@@ -2,3 +2,4 @@
 
 let a: integer = 10;
 a = 20;
+print(a);

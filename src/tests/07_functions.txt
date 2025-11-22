@@ -5,3 +5,4 @@ function suma(a: integer, b: integer): integer {
 }
 
 let resultado: integer = suma(5, 3);
+print(resultado);

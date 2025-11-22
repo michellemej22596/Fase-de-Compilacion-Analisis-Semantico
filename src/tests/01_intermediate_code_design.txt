@@ -3,3 +3,4 @@
 
 let x: integer = 5;
 let y: integer = x + 3;
+print(y);

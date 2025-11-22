@@ -8,3 +8,4 @@ function factorial(n: integer): integer {
 }
 
 let fact: integer = factorial(5);
+print(fact);

@@ -1,3 +1,4 @@
 // RUBRO 3: Expresiones aritméticas (5%)
 
 let resultado: integer = (5 + 3) * 2;
+print(resultado);
