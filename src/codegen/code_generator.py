@@ -1089,40 +1089,43 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         field_offset = 0
         all_fields = {}  # {field_name: offset}
         
-        # First, collect all inherited fields from parent hierarchy
+        # First, collect inherited fields from parent hierarchy (top to bottom)
         if parent_symbol and isinstance(parent_symbol, ClassSymbol):
             # Build hierarchy from top to bottom
             class_hierarchy = []
             current_parent = parent_symbol
-            while current_parent is not None:
-                class_hierarchy.insert(0, current_parent)
-                # Navigate to parent's parent
-                if hasattr(current_parent, 'parent') and current_parent.parent:
-                    # parent might be a string name, need to resolve it
-                    if isinstance(current_parent.parent, str):
-                        parent_name_str = current_parent.parent
-                        next_parent = None
-                        if hasattr(self.symtab, 'current') and hasattr(self.symtab.current, 'resolve'):
-                            next_parent = self.symtab.current.resolve(parent_name_str)
-                        if not next_parent and hasattr(self.symtab, 'resolve'):
-                            next_parent = self.symtab.resolve(parent_name_str)
-                        current_parent = next_parent if isinstance(next_parent, ClassSymbol) else None
-                    else:
-                        current_parent = current_parent.parent if isinstance(current_parent.parent, ClassSymbol) else None
-                else:
-                    current_parent = None
             
-            # Emit inherited fields with correct offsets
+            while current_parent is not None:
+                class_hierarchy.insert(0, current_parent)  # Insert at beginning for top-down order
+                
+                # Navigate to parent's parent
+                next_parent = None
+                if hasattr(current_parent, 'parent') and current_parent.parent:
+                    parent_ref = current_parent.parent
+                    # parent might be a string name or a ClassSymbol
+                    if isinstance(parent_ref, str):
+                        # Resolve the parent name
+                        if hasattr(self.symtab, 'current') and hasattr(self.symtab.current, 'resolve'):
+                            next_parent = self.symtab.current.resolve(parent_ref)
+                        if not next_parent and hasattr(self.symtab, 'resolve'):
+                            next_parent = self.symtab.resolve(parent_ref)
+                    elif isinstance(parent_ref, ClassSymbol):
+                        next_parent = parent_ref
+                
+                current_parent = next_parent if isinstance(next_parent, ClassSymbol) else None
+            
+            # Emit inherited fields with correct offsets (from topmost ancestor down)
             for ancestor_class in class_hierarchy:
                 if hasattr(ancestor_class, 'fields') and ancestor_class.fields:
+                    # Iterate through fields declared in this ancestor
                     for field_name in ancestor_class.fields.keys():
                         if field_name not in all_fields:
-                            # Emit CLASS_FIELD with current class name and correct offset
+                            # Emit CLASS_FIELD with current class name and incremental offset
                             self.quads.emit(QuadOp.CLASS_FIELD, f"{class_name}.{field_name}", field_offset, None)
                             all_fields[field_name] = field_offset
                             field_offset += 1
         
-        # Then, process own fields
+        # Then, process own fields declared in this class
         if ctx.classMember():
             for member in ctx.classMember():
                 if member.variableDeclaration():
@@ -1191,7 +1194,7 @@ class CodeGeneratorVisitor(CompiscriptVisitor):
         # Crear nuevo scope de temporales para el método
         self.temp_manager.push_scope()
         
-        if method_name.lower().startswith("init") and all_fields:
+        if method_name.lower().startswith("init") and all_fields and param_names:
             # Generate SET_FIELD for each parameter that matches a field
             # Parameters are accessed as a0, a1, a2, etc.
             for i, param_name in enumerate(param_names):
