@@ -1,0 +1,26 @@
+class Calculadora {
+    var ultimoResultado: integer;
+
+    function Calc(x: integer, y: integer): integer {
+        var r: integer;
+        r = x * y;
+        return r;
+    }
+
+    function Suma(a: integer, b: integer, c: integer): integer {
+        var z: integer;
+        var t: integer;
+
+        z = this.Calc(a, b);
+        t = z + c;
+
+        return t;
+    }
+}
+
+var calc: Calculadora;
+calc = new Calculadora();
+
+var res: integer;
+res = calc.Suma(2, 3, 4);
+print(res);
