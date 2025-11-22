@@ -1,7 +1,23 @@
-// RUBRO 10: Herencia (5%)
-// ❌ NO IMPLEMENTADO
+class Forma {
+    function dibujar() {
+        print("Dibujando forma");
+    }
+}
 
-// Sintaxis esperada (no funcional):
-// class Estudiante extends Persona {
-//     carrera: string;
-// }
+class Circulo : Forma {
+    function dibujar() {
+        print("Dibujando círculo");
+    }
+}
+
+class Rectangulo : Forma {
+    function dibujar() {
+        print("Dibujando rectángulo");
+    }
+}
+
+let c: Circulo = new Circulo();
+let r: Rectangulo = new Rectangulo();
+
+c.dibujar();
+r.dibujar();
